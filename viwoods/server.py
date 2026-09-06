@@ -4,7 +4,6 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 from fastapi import FastAPI, BackgroundTasks, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -17,13 +16,8 @@ from .vault import ObsidianVault
 
 app = FastAPI(title="Viwoods Companion API", version="1.0.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware on purpose: the dashboard is served from this same
+# origin, and the API holds the Viwoods token and the Gemini key.
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -260,14 +254,31 @@ def update_config(req: ConfigUpdateRequest):
         if hasattr(cfg, k):
             setattr(cfg, k, v)
     save_config(cfg)
-    return {"code": 200, "message": "Configuration saved.", "config": cfg.model_dump()}
+    return {"code": 200, "message": "Configuration saved.", "config": get_config()["config"]}
+
+
+SECRET_FIELDS = ("token", "gemini_api_key")
+
+
+def _mask_secret(value: Optional[str]) -> str:
+    """Returns a display-only tail, e.g. '…_MKpDY', never the secret itself."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    return "…" + value[-6:] if len(value) > 6 else "…"
 
 
 @app.get("/api/config")
 def get_config():
     cfg = load_config()
-    # Mask token slightly for privacy if desired
     data = cfg.model_dump()
+
+    # Secrets never leave the process: the UI gets a has_* flag and a tail.
+    for field in SECRET_FIELDS:
+        data[f"has_{field}"] = bool((data.get(field) or "").strip())
+        data[f"{field}_masked"] = _mask_secret(data.get(field))
+        data.pop(field, None)
+
     return {"code": 200, "config": data}
 
 
@@ -284,9 +295,9 @@ def login(req: LoginRequest):
 
     client = ViwoodsClient(cfg)
     try:
-        token = client.login(req.email, req.password)
+        client.login(req.email, req.password)
         save_config(cfg)
-        return {"code": 200, "message": "Logged in successfully.", "token": token}
+        return {"code": 200, "message": "Logged in successfully."}
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 

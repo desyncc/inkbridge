@@ -119,11 +119,11 @@ def cmd_journals(days=14, force=False, engine=None):
     print(f"\nCompleted! {count} journal note(s) updated in vault.\n")
 
 
-def cmd_serve(port=8765, open_browser=True):
+def cmd_serve(port=8765, host="127.0.0.1", open_browser=True):
     import uvicorn
     from viwoods.server import app
 
-    url = f"http://localhost:{port}"
+    url = f"http://{host}:{port}"
     print(f"\n=======================================================")
     print(f"  Viwoods Companion Web Dashboard running at:")
     print(f"  -> {url}")
@@ -132,7 +132,8 @@ def cmd_serve(port=8765, open_browser=True):
     if open_browser:
         webbrowser.open(url)
 
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    # Loopback only: the dashboard exposes the Viwoods token and vault paths.
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 def cmd_daemon(interval=30):

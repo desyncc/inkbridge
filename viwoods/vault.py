@@ -47,6 +47,30 @@ def _upsert_note_block(section: str, uuid: str, body: str) -> str:
     return block
 
 
+def _to_date_str(value: Any) -> Optional[str]:
+    """Best-effort YYYY-MM-DD from an epoch (s or ms) or a timestamp string."""
+    if isinstance(value, bool) or value in (None, "", 0):
+        return None
+
+    if isinstance(value, (int, float)):
+        seconds = value / 1000 if value > 1e11 else value
+        try:
+            return datetime.fromtimestamp(seconds).strftime("%Y-%m-%d")
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            return _to_date_str(int(text))
+        for fmt, width in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%dT%H:%M:%S", 19), ("%Y-%m-%d", 10)):
+            try:
+                return datetime.strptime(text[:width], fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+    return None
+
+
 def _legacy_section_end(rest: str) -> int:
     """
     Offset in `rest` (the text following the target heading) where a legacy,
@@ -155,11 +179,22 @@ class ObsidianVault:
                 pass
 
         updated_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        created_time = metadata.get("createdAt") or metadata.get("creationTime")
-        if isinstance(created_time, (int, float)):
-            created_str = datetime.fromtimestamp(created_time / 1000).strftime("%Y-%m-%d")
-        else:
+
+        # Creation time comes from the folder listing (the detail payload has
+        # none); fall back to last-modified, then to today.
+        created_str = None
+        for key in ("created_time", "createTime", "createdAt", "create_time", "creationTime"):
+            created_str = _to_date_str(metadata.get(key))
+            if created_str:
+                break
+        if not created_str:
+            created_str = _to_date_str(metadata.get("lastModifiedTime"))
+        if not created_str:
             created_str = datetime.now().strftime("%Y-%m-%d")
+
+        total_available = metadata.get("total_pages_available") or len(pages_data)
+        page_cap = metadata.get("page_cap") or 0
+        pages_dropped = max(0, int(total_available) - len(pages_data))
 
         # Build Markdown content
         frontmatter = [
@@ -173,12 +208,20 @@ class ObsidianVault:
             f"device: \"{self.config.machine_model}\"",
             f"resource_id: \"{uuid}\"",
             f"total_pages: {len(pages_data)}",
+            f"total_pages_available: {total_available}",
             "transcribed: true",
             "---",
             ""
         ]
 
         body = [f"# {safe_title}", ""]
+
+        if pages_dropped:
+            body.append(
+                f"> [!warning] {len(pages_data)} of {total_available} pages synced, "
+                f"cap = max_pages_per_notebook ({page_cap}). Raise the cap to sync the rest."
+            )
+            body.append("")
 
         if not pages_data:
             body.append("*[Empty notebook or collection]*\n")

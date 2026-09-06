@@ -14,6 +14,14 @@ STATE_FILE = Path(__file__).resolve().parent.parent / ".viwoods_sync_state.json"
 LOCAL_CACHE_DIR = Path(__file__).resolve().parent.parent / ".viwoods_cache"
 
 
+def _page_sort_key(page: Dict[str, Any]):
+    """Orders pages by pageNo, keeping unnumbered pages last in API order."""
+    try:
+        return (0, int(page.get("pageNo")))
+    except (TypeError, ValueError):
+        return (1, 0)
+
+
 def load_sync_state() -> dict:
     """Reads the on-disk sync state. Shared with the exporter and the server."""
     if STATE_FILE.exists():
@@ -86,10 +94,11 @@ class SyncEngine:
 
         note_state = self.state["notes"].get(uuid, {})
         cached_mod = note_state.get("last_modified", 0)
-        cached_pages = note_state.get("pages_count", 0)
 
-        # Skip if unmodified, has pages, and not forced
-        if not force and cached_mod and last_modified and last_modified <= cached_mod and cached_pages > 0:
+        # Skip if unmodified and not forced. Page count is deliberately not
+        # part of this test: a genuinely empty note would otherwise be
+        # re-fetched and re-processed on every single sync.
+        if not force and cached_mod and last_modified and last_modified <= cached_mod:
             if progress_cb:
                 progress_cb(f"Skipping unmodified note: {note_name}", 1.0)
             return False
@@ -103,11 +112,17 @@ class SyncEngine:
             print(f"Error fetching note '{note_name}' ({uuid}): {e}")
             return False
 
-        image_pages = detail.get("imagePages", [])
+        # The API returns pages in its own order, so cap by page number, not
+        # by whatever came back first.
+        image_pages = sorted(detail.get("imagePages", []), key=_page_sort_key)
         total_pages = len(image_pages)
         max_allowed = getattr(self.config, "max_pages_per_notebook", 50)
         if max_allowed > 0 and total_pages > max_allowed:
             image_pages = image_pages[:max_allowed]
+            print(
+                f"Note '{note_name}': {max_allowed} of {total_pages} pages synced "
+                f"(max_pages_per_notebook={max_allowed})."
+            )
 
         pages_data = []
 
@@ -148,13 +163,23 @@ class SyncEngine:
                 "raw_page": page
             })
 
+        # The detail payload carries no creation time; the folder listing does.
+        metadata = dict(detail)
+        metadata["created_time"] = next(
+            (item.get(k) for k in ("createTime", "createdAt", "create_time", "creationTime")
+             if item.get(k)),
+            None
+        )
+        metadata["total_pages_available"] = total_pages
+        metadata["page_cap"] = max_allowed
+
         # 1. Mirror into Obsidian Viwoods/ directory
         self.vault.mirror_notebook(
             rel_folder_path=rel_folder_path,
             notebook_name=note_name,
             uuid=uuid,
             pages_data=pages_data,
-            metadata=detail
+            metadata=metadata
         )
 
         # 2. Check if this is a Journal entry that should inject into 10 - Journals
@@ -183,7 +208,8 @@ class SyncEngine:
             "name": note_name,
             "app_type": app_type,
             "last_modified": last_modified,
-            "pages_count": total_pages,
+            "pages_count": len(pages_data),
+            "total_pages": total_pages,
             "synced_at": datetime.now().isoformat()
         }
         self._save_state()

@@ -232,10 +232,13 @@ async function loadNotes() {
       const btn = document.createElement("button");
       btn.className = "note-item-btn";
       btn.dataset.uuid = uuid;
+      const synced = n.pages_count || 0;
+      const total = n.total_pages || synced;
+      const pagesLabel = total > synced ? `${synced} of ${total} pages` : `${synced} pages`;
       btn.dataset.apptype = n.app_type || 1;
       btn.innerHTML = `
         <span class="note-item-title">${getCategoryIcon(n.app_type || 1)} ${escapeHtml(n.name)}</span>
-        <span class="note-item-sub">${n.pages_count || 1} pages • ${formatTime(n.synced_at)}</span>
+        <span class="note-item-sub">${pagesLabel} • ${formatTime(n.synced_at)}</span>
       `;
       btn.addEventListener("click", () => openInStudio(uuid, n.app_type || 1, btn));
       listEl.appendChild(btn);

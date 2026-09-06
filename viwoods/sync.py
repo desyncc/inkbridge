@@ -123,7 +123,7 @@ class SyncEngine:
                         print(f"Error downloading page {page_no} for {note_name}: {e}")
 
                 if local_cache_img.exists():
-                    dest_name = f"{self.vault._sanitize_filename(note_name)}_{uuid[:8]}_p{page_no}.png"
+                    dest_name = self.vault.attachment_filename(note_name, uuid, page_no)
                     local_img_path = self.vault.save_attachment(str(local_cache_img), dest_name)
                     if not transcript:
                         transcript = self.ocr.transcribe(str(local_cache_img), context_prompt=f"Notebook: {note_name}")

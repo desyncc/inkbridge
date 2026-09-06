@@ -74,13 +74,38 @@ class ObsidianVault:
         self.mirror_dir.mkdir(parents=True, exist_ok=True)
         self.attachments_dir.mkdir(parents=True, exist_ok=True)
 
-    def _sanitize_filename(self, name: str) -> str:
-        """Sanitizes filename for Windows filesystem and Obsidian link compatibility."""
+    def _sanitize_filename(self, name: str, max_length: int = 60) -> str:
+        """
+        Sanitizes a filename for Windows filesystem and Obsidian link
+        compatibility. Truncation applies to the stem only, so a file
+        extension is never cut off.
+        """
         clean = re.sub(r'[\r\n\t]+', ' ', name)
-        sanitized = re.sub(r'[<>:"/\\|?*]', '_', clean).strip(". ")
-        if len(sanitized) > 60:
-            sanitized = sanitized[:60].rstrip()
-        return sanitized or "Untitled"
+        stem, ext = os.path.splitext(clean)
+        if not re.fullmatch(r"\.[A-Za-z0-9]{1,8}", ext):
+            stem, ext = clean, ""
+
+        stem = re.sub(r'[<>:"/\\|?*]', '_', stem).strip(". ")
+        budget = max(1, max_length - len(ext))
+        if len(stem) > budget:
+            stem = stem[:budget].rstrip()
+
+        return (stem or "Untitled") + ext
+
+    def attachment_filename(
+        self,
+        note_name: str,
+        uuid: str,
+        page_no: Any,
+        ext: str = ".png",
+        title_limit: int = 40
+    ) -> str:
+        """
+        Builds `<title>_<uuid8>_p<n>.png`, truncating the *title* first so the
+        uuid, page number and extension always survive.
+        """
+        safe_title = self._sanitize_filename(note_name, max_length=title_limit)
+        return f"{safe_title}_{(uuid or 'nouuid')[:8]}_p{page_no}{ext}"
 
     def get_attachment_obsidian_path(self, local_abs_path: str) -> str:
         """Converts an absolute attachment path to Obsidian [[wiki-link]] relative format."""
@@ -89,7 +114,9 @@ class ObsidianVault:
 
     def save_attachment(self, src_file: str, dest_filename: str) -> str:
         """Copies an image/audio to the vault attachments directory and returns its absolute path."""
-        safe_name = self._sanitize_filename(dest_filename)
+        # Generous limit: the caller has already budgeted the title, and the
+        # uuid/page suffix must not be clipped.
+        safe_name = self._sanitize_filename(dest_filename, max_length=100)
         dest_path = self.attachments_dir / safe_name
         shutil.copy2(src_file, dest_path)
         return str(dest_path)

@@ -61,7 +61,11 @@ def data_dir(create: bool = True) -> Path:
 
     if create:
         base.mkdir(parents=True, exist_ok=True)
-        _migrate_legacy_files(base)
+        # Only the default location adopts legacy files: an explicit
+        # VIWOODS_DATA_DIR is a deliberate choice (and a test run) that should
+        # never quietly relocate someone's existing data.
+        if override is None:
+            _migrate_legacy_files(base)
 
     return base
 

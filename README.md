@@ -60,7 +60,9 @@ VIWOODS_DATA_DIR=~/Sync/viwoods python companion.py sync
 ```
 
 Files from the old layout (`.viwoods_config.json` and friends in the project
-root) are moved into the data directory automatically on first run.
+root) are moved into `~/.viwoods` automatically on first run. Setting
+`VIWOODS_DATA_DIR` skips that migration, so an explicit directory always
+starts from whatever is already in it.
 
 The config file is created on first run. Every key it understands, with its
 default:
@@ -234,6 +236,12 @@ Attachment names are `<title>_<uuid8>_p<n>.png`; the title is truncated first so
 ## 🧪 Tests
 
 ```bash
-pip install pytest
+pip install -r requirements-dev.txt
 python -m pytest
 ```
+
+The suite covers the daily-journal marker injection (including legacy
+migration, multiple notebooks per date and CRLF files), attachment naming,
+note lookup, the markdown-to-HTML conversion, request signing and folder
+pagination. It runs against a temporary `VIWOODS_DATA_DIR`, so it never
+touches your real config, state or cache.

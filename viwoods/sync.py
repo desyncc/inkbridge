@@ -135,7 +135,11 @@ class SyncEngine:
                     dest_name = self.vault.attachment_filename(note_name, uuid, page_no)
                     local_img_path = self.vault.save_attachment(str(local_cache_img), dest_name)
                     if not transcript:
-                        transcript = self.ocr.transcribe(str(local_cache_img), context_prompt=f"Notebook: {note_name}")
+                        transcript = self.ocr.transcribe(
+                            str(local_cache_img),
+                            context_prompt=f"Notebook: {note_name}",
+                            force=force
+                        )
 
             pages_data.append({
                 "pageNo": page_no,

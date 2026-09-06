@@ -14,10 +14,29 @@ from .config import Config
 CACHE_FILE = Path(__file__).resolve().parent.parent / ".viwoods_ocr_cache.json"
 
 
+class OCRConfigurationError(RuntimeError):
+    """The selected OCR engine cannot run as configured on this machine."""
+
+
 class OCREngine:
     def __init__(self, config: Config):
         self.config = config
         self.cache = self._load_cache()
+        self._warned: set = set()
+
+    def _warn_once(self, key: str, message: str) -> None:
+        """Prints a configuration error once per process, not once per page."""
+        if key not in self._warned:
+            self._warned.add(key)
+            print(f"Error: {message}")
+
+    def _active_model(self, engine: str) -> str:
+        """The model identifying this engine's output, for cache keying."""
+        return {
+            "ollama": self.config.ollama_model,
+            "lmstudio": self.config.lmstudio_model,
+            "gemini": self.config.gemini_model,
+        }.get(engine, "native") or "default"
 
     def _load_cache(self) -> dict:
         if CACHE_FILE.exists():
@@ -42,45 +61,86 @@ class OCREngine:
                 h.update(chunk)
         return h.hexdigest()
 
-    def transcribe(self, image_path: str, context_prompt: str = "") -> str:
+    def cache_key(self, image_path: str) -> str:
+        """
+        Cache key for this image under the *current* engine and model, so
+        switching models does not serve a transcript produced by the old one.
+        """
+        engine = (self.config.ocr_engine or "").lower()
+        return f"{engine}:{self._active_model(engine)}:{self.get_image_hash(image_path)}"
+
+    def cached_transcript(self, image_path: str) -> Optional[str]:
+        """Returns the cached transcript ("" is a real result), or None if absent."""
+        if not os.path.exists(image_path):
+            return None
+        return self.cache.get(self.cache_key(image_path))
+
+    def transcribe(self, image_path: str, context_prompt: str = "", force: bool = False) -> str:
         """Transcribes a handwritten notebook page image to Markdown text."""
         if not os.path.exists(image_path):
             return ""
 
-        img_hash = self.get_image_hash(image_path)
-        cache_key = f"{self.config.ocr_engine}:{img_hash}"
-        if cache_key in self.cache:
-            return self.cache[cache_key]
+        engine = (self.config.ocr_engine or "").lower()
+        key = self.cache_key(image_path)
 
-        engine = self.config.ocr_engine.lower()
+        # A blank page transcribes to "" — a real result worth caching, so it
+        # is not re-OCR'd on every sync. --force bypasses the cache entirely.
+        if not force and key in self.cache:
+            return self.cache[key] or ""
+
         result = ""
+        engine_ran = False
 
         try:
-            if engine == "gemini" and self.config.gemini_api_key:
+            if engine == "gemini":
+                if not (self.config.gemini_api_key or "").strip():
+                    self._warn_once(
+                        "gemini-no-key",
+                        "Gemini selected but no API key configured. Add one in "
+                        "Settings, or switch the OCR engine (e.g. ollama)."
+                    )
+                    return ""
                 result = self._transcribe_gemini(image_path, context_prompt)
+                engine_ran = True
             elif engine == "ollama":
                 result = self._transcribe_ollama(image_path, context_prompt)
+                engine_ran = True
             elif engine == "lmstudio":
                 result = self._transcribe_lmstudio(image_path, context_prompt)
-            elif sys.platform == "win32":
+                engine_ran = True
+            elif engine == "windows":
+                if sys.platform != "win32":
+                    self._warn_once(
+                        "windows-not-available",
+                        f"OCR engine 'windows' only runs on Windows (this is "
+                        f"{sys.platform}). Switch to 'ollama', 'lmstudio' or "
+                        f"'gemini' — no pages will be transcribed until you do."
+                    )
+                    return ""
                 result = self._transcribe_windows(image_path)
+                engine_ran = True
             else:
-                print(f"Warning: Engine '{engine}' not supported or missing credentials on Linux. Please use 'ollama' or 'gemini'.")
-                result = ""
+                self._warn_once(
+                    f"unknown-engine-{engine}",
+                    f"Unknown OCR engine '{engine}'. Valid engines: ollama, "
+                    f"lmstudio, gemini, windows."
+                )
+                return ""
         except Exception as e:
-            if sys.platform == "win32":
+            if sys.platform == "win32" and engine != "windows":
                 print(f"Warning: OCR engine '{engine}' failed ({e}), falling back to Windows Native OCR...")
                 try:
                     result = self._transcribe_windows(image_path)
+                    engine_ran = True
                 except Exception as e2:
                     print(f"Error: Windows OCR fallback also failed: {e2}")
-                    result = ""
+                    return ""
             else:
                 print(f"Error: OCR engine '{engine}' failed ({e}). Ensure Ollama or your vision service is running.")
-                result = ""
+                return ""
 
-        if result:
-            self.cache[cache_key] = result
+        if engine_ran:
+            self.cache[key] = result
             self._save_cache()
 
         return result

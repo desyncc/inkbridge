@@ -268,7 +268,7 @@ if ($engine -eq $null) {{
         return ""
 
     def _transcribe_ollama(self, image_path: str, context: str = "") -> str:
-        """Transcribes image using local Ollama Vision API (e.g. qwen3.5:9b or qwen3-vl)."""
+        """Transcribes image using local Ollama Vision API (e.g. qwen3-vl:8b-instruct)."""
         try:
             from PIL import Image
             import io

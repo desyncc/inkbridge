@@ -29,14 +29,14 @@ class Config(BaseModel):
     daily_folder: str = "10 - Journals"
     daily_heading: str = "# Transcribed text from AiPaper:"
 
-    # OCR Settings
-    ocr_engine: str = "windows"  # "windows", "gemini", "lmstudio", "ollama"
+    # OCR Settings. "windows" only works on Windows, so it cannot be the default.
+    ocr_engine: str = "ollama"  # "ollama", "lmstudio", "gemini", "windows"
     gemini_api_key: Optional[str] = ""
     gemini_model: str = "gemini-2.0-flash"
     lmstudio_url: str = "http://localhost:1234/v1"
     lmstudio_model: str = "qwen2.5-vl-7b-instruct"
     ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen3.5:9b"
+    ollama_model: str = "qwen3-vl:8b-instruct"
     ollama_think: bool = False
 
     # Sync Preferences

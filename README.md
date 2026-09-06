@@ -41,10 +41,29 @@ It mirrors your tablet's folder hierarchy, downloads high-resolution ink scans, 
   pip install -r requirements.txt
   ```
 
-### 2. Configuration (`.viwoods_config.json`)
+### 2. Configuration (`~/.viwoods/config.json`)
 
-A configuration file is created in the project root on first run. Every key it
-understands, with its default:
+Everything the app stores lives in a per-user data directory, not in the
+project folder:
+
+| Path | Contents |
+| --- | --- |
+| `~/.viwoods/config.json` | Settings, including your Viwoods token and Gemini key |
+| `~/.viwoods/sync_state.json` | What has been synced, per note |
+| `~/.viwoods/ocr_cache.json` | Transcripts, keyed by engine, model and image hash |
+| `~/.viwoods/cache/` | Downloaded page scans and recordings |
+
+Set `VIWOODS_DATA_DIR` to put them somewhere else:
+
+```bash
+VIWOODS_DATA_DIR=~/Sync/viwoods python companion.py sync
+```
+
+Files from the old layout (`.viwoods_config.json` and friends in the project
+root) are moved into the data directory automatically on first run.
+
+The config file is created on first run. Every key it understands, with its
+default:
 
 ```json
 {
@@ -99,7 +118,7 @@ understands, with its default:
 
 > **Note on the auth token**: copy it from `cloud.viwoods.com` in your browser's DevTools (`localStorage.getItem('token')` or a Network-tab request header), then paste it into the dashboard's Settings tab.
 
-> **These files hold secrets.** `.viwoods_config.json` contains your Viwoods JWT and your Gemini API key; `.viwoods_ocr_cache.json`, `.viwoods_sync_state.json` and `.viwoods_cache/` contain your note contents and page scans. All of them are listed in `.gitignore` — keep them out of version control and out of shared folders.
+> **These files hold secrets.** `config.json` contains your Viwoods JWT and your Gemini API key; `ocr_cache.json`, `sync_state.json` and `cache/` contain your note contents and page scans. They live outside the repository, and their old project-root names are listed in `.gitignore` — keep them out of version control and out of shared folders.
 
 ---
 

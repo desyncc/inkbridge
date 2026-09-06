@@ -4,14 +4,14 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
 from typing import Optional
 import httpx
 
 from .config import Config
 from .jsonstore import read_json, update_json
+from .paths import data_path
 
-CACHE_FILE = Path(__file__).resolve().parent.parent / ".viwoods_ocr_cache.json"
+CACHE_FILE = data_path("ocr_cache.json")
 
 
 class OCRConfigurationError(RuntimeError):

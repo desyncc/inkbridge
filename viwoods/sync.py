@@ -8,11 +8,12 @@ from urllib.parse import urlparse
 from .client import ViwoodsClient
 from .config import Config
 from .jsonstore import read_json, update_json
+from .paths import data_path
 from .ocr import OCREngine
 from .vault import ObsidianVault
 
-STATE_FILE = Path(__file__).resolve().parent.parent / ".viwoods_sync_state.json"
-LOCAL_CACHE_DIR = Path(__file__).resolve().parent.parent / ".viwoods_cache"
+STATE_FILE = data_path("sync_state.json")
+LOCAL_CACHE_DIR = data_path("cache")
 
 
 def _page_sort_key(page: Dict[str, Any]):

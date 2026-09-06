@@ -15,6 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 from .config import Config, load_config
+from .sync import LOCAL_CACHE_DIR
 from .client import ViwoodsClient
 from .vault import ObsidianVault
 
@@ -401,7 +402,7 @@ class NoteExporter:
         title = detail.get("name", "Untitled")
         uuid = detail.get("uuid", "")
         image_pages = detail.get("imagePages", [])
-        cache_dir = Path(__file__).resolve().parent.parent / ".viwoods_cache"
+        cache_dir = LOCAL_CACHE_DIR
 
         pages = []
         for p in image_pages:

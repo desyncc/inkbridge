@@ -1,10 +1,10 @@
 import json
-import os
-from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / ".viwoods_config.json"
+from .paths import data_path
+
+CONFIG_PATH = data_path("config.json")
 
 NO_TOKEN_MESSAGE = (
     "No Viwoods token configured. Paste your Access-Token from cloud.viwoods.com "

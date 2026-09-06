@@ -1,4 +1,6 @@
-# Local secrets, caches and sync state (contain your Viwoods JWT / Gemini key)
+# Local secrets, caches and sync state (contain your Viwoods JWT / Gemini key).
+# These now live in ~/.viwoods (or $VIWOODS_DATA_DIR); the entries below cover
+# checkouts that still have them from the old project-root layout.
 .viwoods_config.json
 .viwoods_ocr_cache.json
 .viwoods_sync_state.json

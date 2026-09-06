@@ -299,7 +299,59 @@ function renderActivePage() {
   pageLabel.textContent = `Page ${page.pageNo || (activePageIndex + 1)} of ${activeNote.pages.length}`;
   imgEl.src = page.imageUrl || "";
   lnkOriginal.href = page.imageUrl || "#";
-  txtEl.value = page.transcript || "(No transcription available yet)";
+  txtEl.value = page.transcript || "(Not transcribed yet — click \"Transcribe Page\")";
+
+  const btn = document.getElementById("btnTranscribePage");
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = page.transcript ? "Re-transcribe Page" : "Transcribe Page";
+  }
+}
+
+// OCR is never run by the preview request (a vision model can take minutes
+// per page), so the user asks for it explicitly and we poll for the result.
+async function transcribeActivePage() {
+  if (!activeNote || !activeNote.pages || activeNote.pages.length === 0) return;
+
+  const page = activeNote.pages[activePageIndex];
+  const pageNo = page.pageNo || (activePageIndex + 1);
+  const btn = document.getElementById("btnTranscribePage");
+  const txtEl = document.getElementById("txtTranscript");
+  const appType = activeNote.appType || 1;
+  const force = Boolean(page.transcript);
+
+  btn.disabled = true;
+  btn.textContent = "Transcribing…";
+  txtEl.value = "Running OCR on this page — this can take a while.";
+
+  try {
+    const res = await fetch(`/api/transcribe/${activeNote.uuid}/${pageNo}?app_type=${appType}&force=${force}`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    while (true) {
+      await new Promise(r => setTimeout(r, 1500));
+      const statusRes = await fetch(`/api/transcribe/${activeNote.uuid}/${pageNo}`);
+      const status = await statusRes.json();
+
+      if (status.state === "done") {
+        page.transcript = status.transcript || "";
+        page.needs_transcription = !page.transcript;
+        renderActivePage();
+        if (!page.transcript) txtEl.value = "(OCR returned no text for this page)";
+        return;
+      }
+      if (status.state === "error") {
+        txtEl.value = `OCR failed: ${status.error}`;
+        btn.disabled = false;
+        btn.textContent = "Retry Transcription";
+        return;
+      }
+    }
+  } catch (err) {
+    txtEl.value = `Failed to start transcription: ${err.message}`;
+    btn.disabled = false;
+    btn.textContent = "Retry Transcription";
+  }
 }
 
 async function loadJournals() {
@@ -370,6 +422,9 @@ function bindEvents() {
       renderActivePage();
     }
   });
+
+  const btnTranscribe = document.getElementById("btnTranscribePage");
+  if (btnTranscribe) btnTranscribe.addEventListener("click", transcribeActivePage);
 
   document.getElementById("btnCopyTranscript").addEventListener("click", () => {
     const txt = document.getElementById("txtTranscript").value;

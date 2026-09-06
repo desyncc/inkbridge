@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from .client import ViwoodsClient
 from .config import Config, load_config, save_config
 from .ocr import OCREngine
-from .sync import SyncEngine
+from .sync import LOCAL_CACHE_DIR, SyncEngine
 from .vault import ObsidianVault
 
 app = FastAPI(title="Viwoods Companion API", version="1.0.0")
@@ -31,6 +31,10 @@ sync_status = {
 }
 
 sync_lock = threading.Lock()
+
+# On-demand page transcriptions, keyed "<uuid>:<pageNo>".
+transcribe_jobs: Dict[str, Dict[str, Any]] = {}
+transcribe_lock = threading.Lock()
 
 
 def get_engine() -> SyncEngine:
@@ -185,8 +189,18 @@ def get_synced_notes():
     }
 
 
+def _page_cache_path(uuid: str, page_no: Any) -> Path:
+    return LOCAL_CACHE_DIR / f"{uuid}_p{page_no}.png"
+
+
 @app.get("/api/preview/{uuid}")
 def get_note_preview(uuid: str, app_type: int = 1):
+    """
+    Returns the note's pages with any transcript already available. This never
+    runs OCR: a vision model can take minutes per page and would hold the
+    request (and the browser) open the whole time. Use POST
+    /api/transcribe/{uuid}/{page_no} to transcribe on demand.
+    """
     engine = get_engine()
     try:
         detail = engine.client.get_paper_detail(uuid, app_type=app_type)
@@ -195,19 +209,21 @@ def get_note_preview(uuid: str, app_type: int = 1):
         for idx, page in enumerate(image_pages, start=1):
             page_no = page.get("pageNo", idx)
             img_url = page.get("imageUrl") or page.get("pageImageUrl")
-            direct_content = page.get("content", "").strip()
+            direct_content = (page.get("content") or "").strip()
 
-            # Check if cached locally
-            local_cache_img = Path(__file__).resolve().parent.parent / ".viwoods_cache" / f"{uuid}_p{page_no}.png"
+            local_cache_img = _page_cache_path(uuid, page_no)
             transcript = direct_content
             if not transcript and local_cache_img.exists():
-                transcript = engine.ocr.transcribe(str(local_cache_img))
+                cached = engine.ocr.cached_transcript(str(local_cache_img))
+                transcript = cached or ""
 
             pages.append({
                 "pageNo": page_no,
                 "imageUrl": img_url,
                 "cached": local_cache_img.exists(),
-                "transcript": transcript
+                "transcript": transcript,
+                # True when nothing is available yet and OCR has to be asked for.
+                "needs_transcription": not transcript
             })
 
         return {
@@ -221,6 +237,71 @@ def get_note_preview(uuid: str, app_type: int = 1):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _run_transcription(uuid: str, page_no: int, app_type: int, force: bool) -> None:
+    """Downloads the page if needed and runs OCR. Executed off the request."""
+    key = f"{uuid}:{page_no}"
+    try:
+        engine = get_engine()
+        detail = engine.client.get_paper_detail(uuid, app_type=app_type)
+
+        page = next(
+            (p for p in detail.get("imagePages", [])
+             if str(p.get("pageNo")) == str(page_no)),
+            None
+        )
+        if page is None:
+            raise ValueError(f"Page {page_no} not found in note {uuid}")
+
+        img_path = _page_cache_path(uuid, page_no)
+        if not img_path.exists() or force:
+            img_url = page.get("imageUrl") or page.get("pageImageUrl")
+            if not img_url:
+                raise ValueError(f"Page {page_no} has no image to transcribe")
+            engine.client.download_file(img_url, str(img_path))
+
+        transcript = engine.ocr.transcribe(
+            str(img_path),
+            context_prompt=f"Notebook: {detail.get('name', '')}",
+            force=force
+        )
+        with transcribe_lock:
+            transcribe_jobs[key] = {"state": "done", "transcript": transcript, "error": None}
+    except Exception as e:
+        with transcribe_lock:
+            transcribe_jobs[key] = {"state": "error", "transcript": None, "error": str(e)}
+
+
+@app.post("/api/transcribe/{uuid}/{page_no}")
+def transcribe_page(
+    uuid: str,
+    page_no: int,
+    background_tasks: BackgroundTasks,
+    app_type: int = 1,
+    force: bool = False
+):
+    """Explicitly requests OCR for one page; poll the GET for the result."""
+    key = f"{uuid}:{page_no}"
+    with transcribe_lock:
+        job = transcribe_jobs.get(key)
+        if job and job.get("state") == "running":
+            return {"code": 200, "uuid": uuid, "pageNo": page_no, **job}
+        transcribe_jobs[key] = {"state": "running", "transcript": None, "error": None}
+
+    background_tasks.add_task(_run_transcription, uuid, page_no, app_type, force)
+    return {"code": 202, "uuid": uuid, "pageNo": page_no, "state": "running"}
+
+
+@app.get("/api/transcribe/{uuid}/{page_no}")
+def get_transcription_status(uuid: str, page_no: int):
+    key = f"{uuid}:{page_no}"
+    with transcribe_lock:
+        job = transcribe_jobs.get(key)
+    if not job:
+        return {"code": 200, "uuid": uuid, "pageNo": page_no, "state": "idle",
+                "transcript": None, "error": None}
+    return {"code": 200, "uuid": uuid, "pageNo": page_no, **job}
 
 
 @app.post("/api/sync")

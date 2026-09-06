@@ -1,0 +1,14 @@
+# Local secrets, caches and sync state (contain your Viwoods JWT / Gemini key)
+.viwoods_config.json
+.viwoods_ocr_cache.json
+.viwoods_sync_state.json
+.viwoods_cache/
+
+# Generated output
+exports/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/

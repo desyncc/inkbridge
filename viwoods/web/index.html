@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Viwoods Companion</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-mark">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            <line x1="12" y1="6" x2="16" y2="6"/>
+            <line x1="12" y1="10" x2="16" y2="10"/>
+          </svg>
+        </div>
+        <div class="header-title">
+          <h1>Viwoods Companion</h1>
+          <span class="version-tag">v1.0</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div id="devicePill" class="status-pill offline">
+          <span class="status-dot"></span>
+          <span id="deviceText">Checking Cloud...</span>
+        </div>
+        <div id="vaultPill" class="status-pill vault">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span id="vaultText">Obsidian: Vault</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <button id="btnSyncJournals" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          Sync Journals
+        </button>
+        <button id="btnSyncAll" class="btn btn-primary">
+          <svg id="syncIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          Sync All Notebooks
+        </button>
+      </div>
+    </header>
+
+    <!-- Progress Banner -->
+    <div id="syncProgressBanner" class="sync-progress-banner hidden">
+      <div class="progress-info">
+        <span id="syncProgressMessage">Syncing...</span>
+        <span id="syncProgressPercent">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div id="syncProgressBar" class="progress-bar-fill" style="width: 0%;"></div>
+      </div>
+    </div>
+
+    <!-- Main Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="tabTree">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        Mirrored Directory
+      </button>
+      <button class="tab-btn" data-tab="tabStudio">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 20h9"/>
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+        </svg>
+        OCR & Transcription Studio
+      </button>
+      <button class="tab-btn" data-tab="tabJournals">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
+        Daily Journals
+      </button>
+      <button class="tab-btn" data-tab="tabSettings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Vault & OCR Settings
+      </button>
+    </nav>
+
+    <!-- Content Sections -->
+    <main class="main-content">
+      <!-- Tab 1: Mirrored Directory -->
+      <section id="tabTree" class="tab-pane active">
+        <div class="section-header">
+          <div>
+            <h2>Viwoods Cloud Directory Tree</h2>
+            <p class="section-desc">Replicating 1:1 into your vault under <code id="lblVaultMirror">Viwoods/</code></p>
+          </div>
+          <button id="btnRefreshTree" class="btn btn-outline btn-sm">Refresh Tree</button>
+        </div>
+
+        <div id="treeContainer" class="tree-grid">
+          <div class="loading-spinner">Loading folder tree...</div>
+        </div>
+      </section>
+
+      <!-- Tab 2: OCR Studio -->
+      <section id="tabStudio" class="tab-pane">
+        <div class="studio-layout">
+          <aside class="studio-sidebar">
+            <div class="sidebar-header">
+              <h3>Synced Notebooks</h3>
+              <span id="studioNoteCount" class="badge">0</span>
+            </div>
+            <div id="studioNotesList" class="studio-notes-list">
+              <div class="empty-state">No notes synced yet. Click "Sync All" to start.</div>
+            </div>
+          </aside>
+
+          <div class="studio-workspace">
+            <div id="studioActiveHeader" class="studio-header hidden">
+              <div>
+                <h3 id="studioActiveTitle">Notebook Name</h3>
+                <span id="studioActiveMeta" class="text-muted">1 page • Synced to Obsidian</span>
+              </div>
+              <div class="studio-header-actions" style="display: flex; gap: 12px; align-items: center;">
+                <div class="page-controls">
+                  <button id="btnPrevPage" class="btn btn-icon btn-sm">◀</button>
+                  <span id="lblCurrentPage">Page 1 of 1</span>
+                  <button id="btnNextPage" class="btn btn-icon btn-sm">▶</button>
+                </div>
+                <div class="export-btn-group" style="display: flex; gap: 6px;">
+                  <button id="btnExportPdf" class="btn btn-sm btn-outline" title="Export as PDF">📄 PDF</button>
+                  <button id="btnExportHtml" class="btn btn-sm btn-outline" title="Export as Standalone HTML">🌐 HTML</button>
+                  <button id="btnExportZip" class="btn btn-sm btn-outline" title="Export as ZIP Bundle">📦 ZIP</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="studioEmptyPrompt" class="studio-empty">
+              <p>Select a notebook from the sidebar to inspect the handwritten page and transcription side-by-side.</p>
+            </div>
+
+            <div id="studioSplitView" class="studio-split hidden">
+              <!-- Left: Handwritten Page Image -->
+              <div class="panel-handwriting">
+                <div class="panel-bar">
+                  <span>🖋️ Original AiPaper Handwritten Page</span>
+                  <a id="lnkOpenOriginal" href="#" target="_blank" class="btn-link">Open Full Image ↗</a>
+                </div>
+                <div class="image-viewer">
+                  <img id="imgHandwriting" src="" alt="Handwritten page preview">
+                </div>
+              </div>
+
+              <!-- Right: Transcribed Markdown -->
+              <div class="panel-transcript">
+                <div class="panel-bar">
+                  <span>📝 Transcribed Markdown</span>
+                  <div class="panel-actions">
+                    <button id="btnCopyTranscript" class="btn btn-sm btn-outline">Copy Text</button>
+                  </div>
+                </div>
+                <div class="transcript-editor-container">
+                  <textarea id="txtTranscript" class="transcript-editor" placeholder="Transcription text will appear here..."></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 3: Daily Journals -->
+      <section id="tabJournals" class="tab-pane">
+        <div class="section-header">
+          <div>
+            <h2>Daily Journal Injections</h2>
+            <p class="section-desc">Handwritten journal pages mapped directly into your existing <code id="lblDailyFolder">10 - Journals/</code> notes.</p>
+          </div>
+        </div>
+
+        <div id="journalsContainer" class="journals-grid">
+          <div class="loading-spinner">Loading journal entries...</div>
+        </div>
+      </section>
+
+      <!-- Tab 4: Settings -->
+      <section id="tabSettings" class="tab-pane">
+        <div class="settings-card">
+          <h2>Obsidian Vault Configuration</h2>
+          <div class="form-group">
+            <label for="cfgVaultPath">Obsidian Vault Path</label>
+            <input type="text" id="cfgVaultPath" class="input-text" placeholder="C:\Users\You\Obsidian">
+            <small class="form-hint">Path to your Obsidian vault directory on this computer.</small>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cfgMirrorFolder">Vault Mirror Root Folder</label>
+              <input type="text" id="cfgMirrorFolder" class="input-text" value="Viwoods">
+              <small class="form-hint">Folder where the 1:1 Viwoods directory structure is mirrored.</small>
+            </div>
+            <div class="form-group">
+              <label for="cfgDailyFolder">Daily Notes Folder</label>
+              <input type="text" id="cfgDailyFolder" class="input-text" value="10 - Journals">
+              <small class="form-hint">Subfolder in vault containing your active daily notes.</small>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="cfgDailyHeading">Daily Target Section Heading</label>
+            <input type="text" id="cfgDailyHeading" class="input-text" value="# Transcribed text from AiPaper:">
+            <small class="form-hint">The exact section in your daily note template where transcripts will be injected.</small>
+          </div>
+
+          <div class="form-check">
+            <input type="checkbox" id="cfgMirrorDaily" checked>
+            <label for="cfgMirrorDaily">Also keep a mirrored copy under <code>Viwoods/Daily/</code></label>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h2>OCR & Transcription Engine</h2>
+          <div class="form-group">
+            <label for="cfgOcrEngine">Active OCR Backend</label>
+            <select id="cfgOcrEngine" class="input-select">
+              <option value="ollama">Ollama Vision (Local, e.g. qwen3-vl:8b-instruct)</option>
+              <option value="gemini">Google Gemini Vision (High accuracy for cursive & formatted notes)</option>
+              <option value="lmstudio">Local LM Studio (Self-hosted Homelab Vision)</option>
+              <option value="windows">Windows Native OCR (Built-in, 100% Offline)</option>
+            </select>
+          </div>
+
+          <div id="secOllama" class="engine-details hidden">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cfgOllamaUrl">Ollama API URL</label>
+                <input type="text" id="cfgOllamaUrl" class="input-text" value="http://localhost:11434">
+              </div>
+              <div class="form-group">
+                <label for="cfgOllamaModel">Ollama Vision Model</label>
+                <input type="text" id="cfgOllamaModel" class="input-text" value="qwen3-vl:8b-instruct">
+              </div>
+            </div>
+          </div>
+
+          <div id="secGemini" class="engine-details hidden">
+            <div class="form-group">
+              <label for="cfgGeminiKey">Google AI Studio API Key</label>
+              <input type="password" id="cfgGeminiKey" class="input-text" placeholder="AIzaSy...">
+              <small class="form-hint">Free-tier Gemini API key for multimodal handwriting transcription.</small>
+            </div>
+          </div>
+
+          <div id="secLMStudio" class="engine-details hidden">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cfgLMStudioUrl">LM Studio / Local API URL</label>
+                <input type="text" id="cfgLMStudioUrl" class="input-text" value="http://localhost:1234/v1">
+              </div>
+              <div class="form-group">
+                <label for="cfgLMStudioModel">Vision Model Name</label>
+                <input type="text" id="cfgLMStudioModel" class="input-text" value="qwen2.5-vl-7b-instruct">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h2>Viwoods Cloud Authentication</h2>
+          <div class="form-group">
+            <label for="cfgToken">Active Session Token (JWT)</label>
+            <textarea id="cfgToken" class="input-text font-mono" rows="3" placeholder="eyJ..."></textarea>
+            <small class="form-hint">Your <code>Access-Token</code> from cloud.viwoods.com.</small>
+          </div>
+
+          <button id="btnSaveConfig" class="btn btn-primary">Save Settings</button>
+          <span id="lblConfigSaved" class="text-success hidden">✓ Settings saved</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

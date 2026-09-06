@@ -64,9 +64,27 @@ async function loadStatus() {
     if (data.connected) {
       devPill.className = "status-pill online";
       devText.textContent = `${data.device.model} [${data.device.sn || "Connected"}]`;
+      devPill.title = "";
+      devPill.onclick = null;
+      devPill.style.cursor = "";
+    } else if (data.auth_error) {
+      // One click away from the field that fixes it.
+      devPill.className = "status-pill offline";
+      devText.textContent = data.has_token
+        ? "Token expired — open Settings"
+        : "No token — open Settings";
+      devPill.title = data.error || "";
+      devPill.style.cursor = "pointer";
+      devPill.onclick = () => {
+        document.querySelector('[data-tab="tabSettings"]').click();
+        document.getElementById("cfgToken").focus();
+      };
     } else {
       devPill.className = "status-pill offline";
-      devText.textContent = "Offline / Token Expired";
+      devText.textContent = "Viwoods Cloud unreachable";
+      devPill.title = data.error || "";
+      devPill.onclick = null;
+      devPill.style.cursor = "";
     }
 
     // Vault Pill

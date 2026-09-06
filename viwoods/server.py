@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .client import ViwoodsClient
+from .client import AuthError, ViwoodsClient
 from .config import Config, load_config, save_config
 from .ocr import OCREngine
 from .sync import LOCAL_CACHE_DIR, SyncEngine
@@ -140,10 +140,15 @@ def get_status():
     devices = []
     connected = False
     error = None
+    auth_error = False
 
     try:
         devices = engine.client.get_devices()
         connected = True
+    except AuthError as e:
+        # Distinguished from a generic failure so the UI can point at Settings.
+        error = str(e)
+        auth_error = True
     except Exception as e:
         error = str(e)
 
@@ -172,7 +177,9 @@ def get_status():
             "ollama_model": cfg.ollama_model
         },
         "last_sync": engine.state.get("last_full_sync"),
-        "error": error
+        "error": error,
+        "auth_error": auth_error,
+        "has_token": bool(cfg.token)
     }
 
 

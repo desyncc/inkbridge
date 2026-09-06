@@ -10,6 +10,25 @@ import httpx
 
 from .config import Config, NO_TOKEN_MESSAGE
 
+TOKEN_EXPIRED_MESSAGE = "Viwoods token expired, paste a new one in Settings."
+
+# Viwoods API result codes that mean "log in again".
+AUTH_ERROR_CODES = {"401", "403", "1001", "4001", "10001"}
+_AUTH_ERROR_HINTS = ("token expired", "token invalid", "invalid token",
+                     "not logged in", "please login", "please log in",
+                     "unauthorized", "登录", "令牌")
+
+
+class AuthError(RuntimeError):
+    """The Viwoods session token is missing, invalid or expired."""
+
+
+def _is_auth_failure(code: Any, message: str) -> bool:
+    if str(code) in AUTH_ERROR_CODES:
+        return True
+    lowered = (message or "").lower()
+    return any(hint in lowered for hint in _AUTH_ERROR_HINTS)
+
 
 def _sign_value(value: Any) -> str:
     """
@@ -137,7 +156,7 @@ class ViwoodsClient:
     def post(self, uri_path: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Makes an authenticated, signed POST request to the Viwoods Cloud API."""
         if not self.config.token and not uri_path.rstrip("/").endswith("user/login"):
-            raise RuntimeError(NO_TOKEN_MESSAGE)
+            raise AuthError(NO_TOKEN_MESSAGE)
 
         uri = uri_path.lstrip("/")
         payload = dict(data or {})
@@ -147,12 +166,17 @@ class ViwoodsClient:
 
         url = f"{self.config.api_base_url}/{uri}"
         resp = self.http.post(url, json=payload, headers=headers)
+        if resp.status_code in (401, 403):
+            raise AuthError(TOKEN_EXPIRED_MESSAGE)
         resp.raise_for_status()
         res_json = resp.json()
 
-        if res_json.get("code") not in (200, "200"):
+        code = res_json.get("code")
+        if code not in (200, "200"):
             msg = res_json.get("msg") or res_json.get("message") or "API error"
-            raise RuntimeError(f"Viwoods API error ({uri}): {msg} (code: {res_json.get('code')})")
+            if _is_auth_failure(code, msg):
+                raise AuthError(TOKEN_EXPIRED_MESSAGE)
+            raise RuntimeError(f"Viwoods API error ({uri}): {msg} (code: {code})")
 
         return res_json
 

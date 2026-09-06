@@ -6,6 +6,7 @@ Sync your notebooks and daily handwriting from cloud.viwoods.com to Obsidian.
 import argparse
 import sys
 import time
+import traceback
 import webbrowser
 from pathlib import Path
 
@@ -136,18 +137,31 @@ def cmd_serve(port=8765, host="127.0.0.1", open_browser=True):
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 
-def cmd_daemon(interval=30):
+def cmd_daemon(interval=30, max_backoff_minutes=240):
     cfg = load_config()
     engine = SyncEngine(cfg)
     print(f"\n[Viwoods Companion] Starting background daemon (sync every {interval} minutes)...")
     print("Press Ctrl+C to stop.\n")
 
+    consecutive_failures = 0
+
     try:
         while True:
             print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Running scheduled sync...")
-            engine.sync_all(force=False, progress_cb=lambda msg, pct: print(f"  {msg}"))
-            print(f"Sleeping for {interval} minutes...\n")
-            time.sleep(interval * 60)
+            try:
+                engine.sync_all(force=False, progress_cb=lambda msg, pct: print(f"  {msg}"))
+                consecutive_failures = 0
+                wait_minutes = interval
+            except Exception as e:
+                # A dropped connection or an expired token must not kill the
+                # loop; back off so a persistent outage isn't hammered.
+                consecutive_failures += 1
+                wait_minutes = min(interval * (2 ** (consecutive_failures - 1)), max_backoff_minutes)
+                print(f"[ERROR] Sync failed ({consecutive_failures} in a row): {e}")
+                traceback.print_exc()
+
+            print(f"Sleeping for {wait_minutes} minutes...\n")
+            time.sleep(wait_minutes * 60)
     except KeyboardInterrupt:
         print("\nDaemon stopped.")
 

@@ -107,6 +107,7 @@ class ConfigUpdateRequest(BaseModel):
     vault_mirror_folder: Optional[str] = None
     daily_folder: Optional[str] = None
     daily_heading: Optional[str] = None
+    create_missing_daily_notes: Optional[bool] = None
     ocr_engine: Optional[str] = None
     gemini_api_key: Optional[str] = None
     gemini_model: Optional[str] = None
@@ -332,6 +333,7 @@ def _run_transcription(uuid: str, page_no: int, app_type: int, force: bool) -> N
             context_prompt=f"Notebook: {detail.get('name', '')}",
             force=force
         )
+        engine.ocr.flush_cache()
         with transcribe_lock:
             transcribe_jobs[key] = {"state": "done", "transcript": transcript, "error": None}
     except Exception as e:

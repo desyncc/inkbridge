@@ -51,6 +51,8 @@ class SyncEngine:
         self.state = self._load_state()
         # Notes updated by this run, merged into the file on each save.
         self._dirty_notes: set = set()
+        # Filled by a dry run with what would have been synced.
+        self.planned: List[Dict[str, Any]] = []
 
         LOCAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -106,7 +108,8 @@ class SyncEngine:
         rel_folder_path: str,
         app_type: int = 1,
         force: bool = False,
-        progress_cb: Optional[Callable[[str, float], None]] = None
+        progress_cb: Optional[Callable[[str, float], None]] = None,
+        dry_run: bool = False
     ) -> bool:
         """Syncs a single notebook: downloads pages, transcribes handwriting, and updates vault."""
         uuid = item.get("uuid") or item.get("resourceId")
@@ -123,6 +126,19 @@ class SyncEngine:
             if progress_cb:
                 progress_cb(f"Skipping unmodified note: {note_name}", 1.0)
             return False
+
+        if dry_run:
+            # Report what would change without fetching, downloading or writing.
+            self.planned.append({
+                "uuid": uuid,
+                "name": note_name,
+                "folder": rel_folder_path,
+                "app_type": app_type,
+                "reason": "new" if not cached_mod else "modified",
+            })
+            if progress_cb:
+                progress_cb(f"Would sync: {note_name}", 1.0)
+            return True
 
         if progress_cb:
             progress_cb(f"Fetching note: {note_name}...", 0.1)
@@ -239,6 +255,8 @@ class SyncEngine:
         }
         self._dirty_notes.add(uuid)
         self._save_state()
+        # Flush per notebook: bounded loss on a crash, no O(pages^2) rewrites.
+        self.ocr.flush_cache()
 
         if progress_cb:
             progress_cb(f"Finished: {note_name}", 1.0)
@@ -309,7 +327,8 @@ class SyncEngine:
         rel_path: str = "",
         force: bool = False,
         visited: Optional[set] = None,
-        progress_cb: Optional[Callable[[str, float], None]] = None
+        progress_cb: Optional[Callable[[str, float], None]] = None,
+        dry_run: bool = False
     ) -> int:
         """Recursively traverses a folder and mirrors all subfolders and notebooks."""
         if visited is None:
@@ -353,7 +372,8 @@ class SyncEngine:
                     rel_path=current_rel,
                     force=force,
                     visited=visited,
-                    progress_cb=progress_cb
+                    progress_cb=progress_cb,
+                    dry_run=dry_run
                 )
                 synced_count += sub_count
             else:
@@ -363,7 +383,8 @@ class SyncEngine:
                     rel_folder_path=current_rel,
                     app_type=app_type,
                     force=force,
-                    progress_cb=progress_cb
+                    progress_cb=progress_cb,
+                    dry_run=dry_run
                 )
                 if success:
                     synced_count += 1
@@ -374,7 +395,8 @@ class SyncEngine:
         self,
         force: bool = False,
         progress_cb: Optional[Callable[[str, float], None]] = None,
-        app_types: Optional[Iterable[int]] = None
+        app_types: Optional[Iterable[int]] = None,
+        dry_run: bool = False
     ) -> Dict[str, Any]:
         """
         Performs a full sync across the root apps (Paper, Meeting, Learning,
@@ -383,6 +405,7 @@ class SyncEngine:
         if progress_cb:
             progress_cb("Connecting to Viwoods Cloud...", 0.01)
 
+        self.planned = []
         wanted = set(app_types) if app_types is not None else None
 
         # Refresh device info
@@ -413,21 +436,27 @@ class SyncEngine:
                 resource_id="",
                 rel_path="",
                 force=force,
-                progress_cb=progress_cb
+                progress_cb=progress_cb,
+                dry_run=dry_run
             )
             total_synced += synced
             details[name] = synced
 
-        self.state["last_full_sync"] = datetime.now().isoformat()
-        self._save_state()
+        if not dry_run:
+            self.state["last_full_sync"] = datetime.now().isoformat()
+            self._save_state()
+            self.ocr.flush_cache()
 
         if progress_cb:
-            progress_cb(f"Sync completed! {total_synced} notes updated.", 1.0)
+            verb = "would be updated" if dry_run else "updated"
+            progress_cb(f"Sync completed! {total_synced} notes {verb}.", 1.0)
 
         return {
             "total_synced": total_synced,
             "details": details,
-            "timestamp": self.state["last_full_sync"]
+            "timestamp": self.state["last_full_sync"],
+            "dry_run": dry_run,
+            "planned": list(self.planned)
         }
 
     def find_resource_location(
@@ -513,12 +542,14 @@ class SyncEngine:
         self,
         days_back: int = 14,
         force: bool = False,
-        progress_cb: Optional[Callable[[str, float], None]] = None
+        progress_cb: Optional[Callable[[str, float], None]] = None,
+        dry_run: bool = False
     ) -> int:
         """Syncs recent journal entries from the 'Journals' folder."""
         if progress_cb:
             progress_cb(f"Scanning for journal entries (last {days_back} days)...", 0.05)
 
+        self.planned = []
         items = self.list_journal_items()
         if not items:
             return 0
@@ -545,7 +576,8 @@ class SyncEngine:
                 rel_folder_path="Paper/Journals",
                 app_type=1,
                 force=force,
-                progress_cb=progress_cb
+                progress_cb=progress_cb,
+                dry_run=dry_run
             )
             if success:
                 synced += 1

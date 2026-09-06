@@ -86,24 +86,33 @@ def cmd_set_engine(engine: str, model: str = None, url: str = None):
         print(f"  URL:   {cfg.ollama_url}")
 
 
-def cmd_sync(force=False, engine=None):
+def cmd_sync(force=False, engine=None, dry_run=False):
     cfg = load_config()
     if engine:
         cfg.ocr_engine = engine
     eng = SyncEngine(cfg)
-    print(f"\n[Viwoods Companion] Starting Full Sync into Obsidian ({cfg.vault_path})...")
+    action = "Dry Run" if dry_run else "Starting Full Sync"
+    print(f"\n[Viwoods Companion] {action} into Obsidian ({cfg.vault_path})...")
     print(f"Using OCR engine: {cfg.ocr_engine}")
-    if force:
+    if dry_run:
+        print("Note: Dry run - nothing will be downloaded, transcribed or written")
+    elif force:
         print("Note: Force mode enabled (re-downloading and re-transcribing all pages)")
 
     def on_progress(msg, pct):
         print(f"[{int(pct * 100):3d}%] {msg}")
 
-    result = eng.sync_all(force=force, progress_cb=on_progress)
+    result = eng.sync_all(force=force, progress_cb=on_progress, dry_run=dry_run)
     print("\n" + "=" * 45)
-    print(f"Sync Complete! {result['total_synced']} notebook(s) updated.")
-    for cat, count in result.get("details", {}).items():
-        print(f"  - {cat}: {count} note(s)")
+    if dry_run:
+        planned = result.get("planned", [])
+        print(f"Dry run: {len(planned)} notebook(s) would be synced.")
+        for note in planned:
+            print(f"  - [{note['reason']}] {note['folder']}/{note['name']}")
+    else:
+        print(f"Sync Complete! {result['total_synced']} notebook(s) updated.")
+        for cat, count in result.get("details", {}).items():
+            print(f"  - {cat}: {count} note(s)")
     print("=" * 45 + "\n")
 
 
@@ -245,6 +254,7 @@ def main():
     # sync
     p_sync = subparsers.add_parser("sync", help="Run full sync of all notebooks and daily notes")
     p_sync.add_argument("--force", action="store_true", help="Force re-sync and re-transcribe all notes")
+    p_sync.add_argument("--dry-run", action="store_true", help="Report what would change without writing anything")
     p_sync.add_argument("--engine", choices=["windows", "ollama", "gemini", "lmstudio"], help="OCR engine to use")
 
     # journals
@@ -273,7 +283,7 @@ def main():
     elif args.command == "export":
         cmd_export(query=args.query, fmt=args.format, output_dir=args.output, list_notes=args.list)
     elif args.command == "sync":
-        cmd_sync(force=args.force, engine=getattr(args, "engine", None))
+        cmd_sync(force=args.force, engine=getattr(args, "engine", None), dry_run=args.dry_run)
     elif args.command == "journals":
         cmd_journals(days=args.days, force=args.force, engine=getattr(args, "engine", None))
     elif args.command == "set-engine":

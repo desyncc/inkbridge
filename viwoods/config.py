@@ -28,6 +28,9 @@ class Config(BaseModel):
     vault_attachments_folder: str = "Viwoods/Attachments"
     daily_folder: str = "10 - Journals"
     daily_heading: str = "# Transcribed text from AiPaper:"
+    # False leaves a missing daily note alone, so Obsidian's own daily-note
+    # template (or Templater) creates it first and the sync fills it in later.
+    create_missing_daily_notes: bool = True
 
     # OCR Settings. "windows" only works on Windows, so it cannot be the default.
     ocr_engine: str = "ollama"  # "ollama", "lmstudio", "gemini", "windows"

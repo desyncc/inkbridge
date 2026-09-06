@@ -81,6 +81,7 @@ default:
   "vault_attachments_folder": "Viwoods/Attachments",
   "daily_folder": "10 - Journals",
   "daily_heading": "# Transcribed text from AiPaper:",
+  "create_missing_daily_notes": true,
 
   "ocr_engine": "ollama",
   "gemini_api_key": "",
@@ -109,6 +110,7 @@ default:
 | `vault_attachments_folder` | Where page PNGs and recordings are written. |
 | `daily_folder` | Folder containing your daily notes. |
 | `daily_heading` | Heading in a daily note under which the marked block is injected. |
+| `create_missing_daily_notes` | Create the daily note when it does not exist. Set `false` to let Obsidian's own daily-note template create it first. |
 | `ocr_engine` | `ollama`, `lmstudio`, `gemini` or `windows` (Windows only). |
 | `gemini_api_key`, `gemini_model` | Google AI Studio credentials and model. |
 | `lmstudio_url`, `lmstudio_model` | OpenAI-compatible vision endpoint and model. |
@@ -167,6 +169,11 @@ Finds your `Journals` folder in Paper and updates the matching daily notes in `1
 python companion.py sync
 ```
 Recursively mirrors all cloud categories (`Paper`, `Meeting`, `Learning`, `Knowledge Base`, `Memo`) into `Viwoods/` in your Obsidian vault. Use `--force` to re-download and re-transcribe existing notes.
+
+```bash
+python companion.py sync --dry-run
+```
+Lists the notebooks that would be synced, and why, without fetching, transcribing or writing anything.
 
 ### Export a Note
 ```bash

@@ -13,6 +13,10 @@ from .paths import data_path
 
 CACHE_FILE = data_path("ocr_cache.json")
 
+# Transcripts held in memory before the cache file is rewritten. A notebook is
+# flushed as soon as it finishes, so at most this many can be lost on a crash.
+CACHE_FLUSH_EVERY = 10
+
 
 class OCRConfigurationError(RuntimeError):
     """The selected OCR engine cannot run as configured on this machine."""
@@ -43,11 +47,22 @@ class OCREngine:
     def _load_cache(self) -> dict:
         return read_json(CACHE_FILE, {})
 
-    def _save_cache(self):
+    def flush_cache(self) -> None:
+        """Writes any transcripts still held in memory. Call at a safe point."""
+        self._save_cache(force=True)
+
+    def _save_cache(self, force: bool = False):
         """
         Merges the transcripts produced by this process into the file on disk,
         so a parallel sync's results are not thrown away.
+
+        Writes are batched: the cache file holds every transcript ever made,
+        so rewriting it after each page turns a long sync into O(pages²) of
+        JSON serialization.
         """
+        if not force and len(self._pending) < CACHE_FLUSH_EVERY:
+            return
+
         pending = {key: self.cache[key] for key in self._pending if key in self.cache}
         if not pending:
             return

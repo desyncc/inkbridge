@@ -104,6 +104,7 @@ const SETTINGS_FIELDS = {
   cfgMirrorFolder: { field: "vault_mirror_folder" },
   cfgDailyFolder: { field: "daily_folder" },
   cfgDailyHeading: { field: "daily_heading" },
+  cfgCreateMissingDaily: { field: "create_missing_daily_notes", type: "checkbox" },
   cfgAutoSyncInterval: { field: "auto_sync_interval", type: "number" },
   cfgMaxPages: { field: "max_pages_per_notebook", type: "number" },
   cfgDownloadRecordings: { field: "download_recordings", type: "checkbox" },

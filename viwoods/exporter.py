@@ -184,7 +184,17 @@ class NoteExporter:
                         })
         return sorted(notes, key=lambda x: x["title"].lower())
 
-    def find_note(self, query: str) -> Optional[Dict[str, Any]]:
+    def _stored_app_type(self, uuid: str) -> Optional[int]:
+        """Returns the appType recorded for this note by the last sync, if any."""
+        from .sync import load_sync_state
+        note = load_sync_state().get("notes", {}).get(uuid)
+        if isinstance(note, dict):
+            app_type = note.get("app_type")
+            if isinstance(app_type, int):
+                return app_type
+        return None
+
+    def find_note(self, query: str, app_type: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """
         Locates note data by UUID or title substring.
         Returns parsed note dictionary.
@@ -216,18 +226,22 @@ class NoteExporter:
         if matched_path and matched_path.exists():
             return self._parse_vault_note(matched_path)
 
-        # 4. Fallback: try querying Viwoods Cloud directly if query is a UUID
+        # 4. Fallback: try querying Viwoods Cloud directly if query is a UUID.
+        # The caller's app type, else the one recorded at sync time, is tried
+        # first; the remaining apps are only a last resort.
         if len(query_clean) >= 32 and "-" in query_clean:
-            try:
-                for app_t in [1, 2, 4, 6]:
-                    try:
-                        detail = self.client.get_paper_detail(query_clean, app_type=app_t)
-                        if detail.get("imagePages"):
-                            return self._parse_cloud_note(detail)
-                    except Exception:
-                        continue
-            except Exception:
-                pass
+            preferred = app_type or self._stored_app_type(query_clean)
+            candidates = [t for t in (1, 2, 3, 4, 6) if t != preferred]
+            if preferred:
+                candidates.insert(0, preferred)
+
+            for app_t in candidates:
+                try:
+                    detail = self.client.get_paper_detail(query_clean, app_type=app_t)
+                except Exception:
+                    continue
+                if detail.get("imagePages"):
+                    return self._parse_cloud_note(detail)
 
         return None
 
@@ -330,13 +344,13 @@ class NoteExporter:
             "source_path": ""
         }
 
-    def export_pdf(self, query: str, output_dir: Optional[str] = None) -> Path:
+    def export_pdf(self, query: str, output_dir: Optional[str] = None, app_type: Optional[int] = None) -> Path:
         """
         Exports note to a high-quality, professional PDF.
         Features cover metadata banner, properly scaled handwriting scans,
         and cleanly typeset selectable Markdown transcripts.
         """
-        note = self.find_note(query)
+        note = self.find_note(query, app_type=app_type)
         if not note:
             raise ValueError(f"Note not found matching: '{query}'")
 
@@ -434,12 +448,12 @@ class NoteExporter:
         doc.build(story)
         return pdf_path
 
-    def export_html(self, query: str, output_dir: Optional[str] = None) -> Path:
+    def export_html(self, query: str, output_dir: Optional[str] = None, app_type: Optional[int] = None) -> Path:
         """
         Exports note to a standalone, responsive HTML file with inlined base64 images.
         Opens in any browser, mobile or desktop, and can be printed cleanly via Ctrl+P.
         """
-        note = self.find_note(query)
+        note = self.find_note(query, app_type=app_type)
         if not note:
             raise ValueError(f"Note not found matching: '{query}'")
 
@@ -654,11 +668,11 @@ class NoteExporter:
 
         return html_path
 
-    def export_zip(self, query: str, output_dir: Optional[str] = None) -> Path:
+    def export_zip(self, query: str, output_dir: Optional[str] = None, app_type: Optional[int] = None) -> Path:
         """
         Bundles note markdown and attachment images into a standard .zip file.
         """
-        note = self.find_note(query)
+        note = self.find_note(query, app_type=app_type)
         if not note:
             raise ValueError(f"Note not found matching: '{query}'")
 

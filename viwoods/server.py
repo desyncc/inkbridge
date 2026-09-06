@@ -191,6 +191,7 @@ def get_note_preview(uuid: str, app_type: int = 1):
         return {
             "code": 200,
             "uuid": uuid,
+            "appType": app_type,
             "name": detail.get("name"),
             "pages": pages,
             "recordings": detail.get("recordings", []),
@@ -303,20 +304,20 @@ def login(req: LoginRequest):
 
 
 @app.get("/api/export/{uuid}")
-def export_note_endpoint(uuid: str, format: str = "pdf"):
+def export_note_endpoint(uuid: str, format: str = "pdf", app_type: Optional[int] = None):
     """Exports a note to PDF, Standalone HTML, or ZIP and returns it as a file download."""
     from .exporter import NoteExporter
     exporter = NoteExporter()
     try:
         fmt = format.lower()
         if fmt == "html":
-            out_file = exporter.export_html(uuid)
+            out_file = exporter.export_html(uuid, app_type=app_type)
             media_type = "text/html"
         elif fmt == "zip":
-            out_file = exporter.export_zip(uuid)
+            out_file = exporter.export_zip(uuid, app_type=app_type)
             media_type = "application/zip"
         else:
-            out_file = exporter.export_pdf(uuid)
+            out_file = exporter.export_pdf(uuid, app_type=app_type)
             media_type = "application/pdf"
 
         return FileResponse(

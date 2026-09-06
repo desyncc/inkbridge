@@ -14,6 +14,21 @@ STATE_FILE = Path(__file__).resolve().parent.parent / ".viwoods_sync_state.json"
 LOCAL_CACHE_DIR = Path(__file__).resolve().parent.parent / ".viwoods_cache"
 
 
+def load_sync_state() -> dict:
+    """Reads the on-disk sync state. Shared with the exporter and the server."""
+    if STATE_FILE.exists():
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                data.setdefault("notes", {})
+                data.setdefault("last_full_sync", None)
+                return data
+        except Exception:
+            pass
+    return {"notes": {}, "last_full_sync": None}
+
+
 class SyncEngine:
     def __init__(
         self,
@@ -31,13 +46,7 @@ class SyncEngine:
         LOCAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     def _load_state(self) -> dict:
-        if STATE_FILE.exists():
-            try:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {"notes": {}, "last_full_sync": None}
+        return load_sync_state()
 
     def _save_state(self):
         try:
@@ -168,6 +177,7 @@ class SyncEngine:
         # Update state
         self.state["notes"][uuid] = {
             "name": note_name,
+            "app_type": app_type,
             "last_modified": last_modified,
             "pages_count": total_pages,
             "synced_at": datetime.now().isoformat()
@@ -343,6 +353,7 @@ class SyncEngine:
             success = self.sync_notebook(
                 item=it,
                 rel_folder_path="Paper/Journals",
+                app_type=1,
                 force=force,
                 progress_cb=progress_cb
             )

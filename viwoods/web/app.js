@@ -158,7 +158,7 @@ async function loadTree() {
           const icon = isFolder ? "📁" : "📄";
           const pages = it.pageCount ? `(${it.pageCount}p)` : "";
           return `
-            <li class="item-row ${isFolder ? 'is-folder' : ''}" data-uuid="${it.uuid || it.resourceId || ''}" data-type="${it.resourceType}">
+            <li class="item-row ${isFolder ? 'is-folder' : ''}" data-uuid="${it.uuid || it.resourceId || ''}" data-type="${it.resourceType}" data-apptype="${cat.appType}">
               <span>${icon} ${escapeHtml(it.name)}</span>
               <span class="text-muted font-mono" style="font-size: 0.75rem;">${pages}</span>
             </li>
@@ -187,7 +187,7 @@ async function loadTree() {
         const uuid = row.dataset.uuid;
         const isFolder = row.dataset.type === "0" || row.dataset.type === "5";
         if (uuid && !isFolder) {
-          openInStudio(uuid);
+          openInStudio(uuid, parseInt(row.dataset.apptype, 10) || 1);
         }
       });
     });
@@ -231,11 +231,12 @@ async function loadNotes() {
       const btn = document.createElement("button");
       btn.className = "note-item-btn";
       btn.dataset.uuid = uuid;
+      btn.dataset.apptype = n.app_type || 1;
       btn.innerHTML = `
-        <span class="note-item-title">${escapeHtml(n.name)}</span>
+        <span class="note-item-title">${getCategoryIcon(n.app_type || 1)} ${escapeHtml(n.name)}</span>
         <span class="note-item-sub">${n.pages_count || 1} pages • ${formatTime(n.synced_at)}</span>
       `;
-      btn.addEventListener("click", () => openInStudio(uuid, btn));
+      btn.addEventListener("click", () => openInStudio(uuid, n.app_type || 1, btn));
       listEl.appendChild(btn);
     });
   } catch (err) {
@@ -243,7 +244,7 @@ async function loadNotes() {
   }
 }
 
-async function openInStudio(uuid, clickedBtn = null) {
+async function openInStudio(uuid, appType = 1, clickedBtn = null) {
   // Switch to studio tab
   document.querySelector('[data-tab="tabStudio"]').click();
 
@@ -263,9 +264,10 @@ async function openInStudio(uuid, clickedBtn = null) {
   splitView.classList.add("hidden");
 
   try {
-    const res = await fetch(`/api/preview/${uuid}`);
+    const res = await fetch(`/api/preview/${uuid}?app_type=${appType}`);
     const data = await res.json();
     activeNote = data;
+    activeNote.appType = data.appType || appType;
     activePageIndex = 0;
 
     emptyPrompt.classList.add("hidden");
@@ -366,32 +368,15 @@ function bindEvents() {
   });
 
   // Export Note Actions (PDF, HTML, ZIP)
-  const btnExportPdf = document.getElementById("btnExportPdf");
-  if (btnExportPdf) {
-    btnExportPdf.addEventListener("click", () => {
-      if (activeNote && activeNote.uuid) {
-        window.open(`/api/export/${activeNote.uuid}?format=pdf`, "_blank");
-      }
+  [["btnExportPdf", "pdf"], ["btnExportHtml", "html"], ["btnExportZip", "zip"]].forEach(([btnId, fmt]) => {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      if (!activeNote || !activeNote.uuid) return;
+      const appType = activeNote.appType || 1;
+      window.open(`/api/export/${activeNote.uuid}?format=${fmt}&app_type=${appType}`, "_blank");
     });
-  }
-
-  const btnExportHtml = document.getElementById("btnExportHtml");
-  if (btnExportHtml) {
-    btnExportHtml.addEventListener("click", () => {
-      if (activeNote && activeNote.uuid) {
-        window.open(`/api/export/${activeNote.uuid}?format=html`, "_blank");
-      }
-    });
-  }
-
-  const btnExportZip = document.getElementById("btnExportZip");
-  if (btnExportZip) {
-    btnExportZip.addEventListener("click", () => {
-      if (activeNote && activeNote.uuid) {
-        window.open(`/api/export/${activeNote.uuid}?format=zip`, "_blank");
-      }
-    });
-  }
+  });
 
   // Settings Save
   document.getElementById("btnSaveConfig").addEventListener("click", saveSettings);

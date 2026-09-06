@@ -1,6 +1,8 @@
-import asyncio
 import os
 import threading
+import time
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 from fastapi import FastAPI, BackgroundTasks, HTTPException
@@ -14,7 +16,18 @@ from .ocr import OCREngine
 from .sync import LOCAL_CACHE_DIR, SyncEngine
 from .vault import ObsidianVault
 
-app = FastAPI(title="Viwoods Companion API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Runs the auto-sync scheduler for as long as the dashboard is up."""
+    thread = threading.Thread(target=_auto_sync_loop, name="viwoods-auto-sync", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        auto_sync_stop.set()
+
+
+app = FastAPI(title="Viwoods Companion API", version="1.0.0", lifespan=lifespan)
 
 # No CORS middleware on purpose: the dashboard is served from this same
 # origin, and the API holds the Viwoods token and the Gemini key.
@@ -36,6 +49,50 @@ sync_lock = threading.Lock()
 transcribe_jobs: Dict[str, Dict[str, Any]] = {}
 transcribe_lock = threading.Lock()
 
+# Config.auto_sync_interval scheduler (serve mode). The config is re-read every
+# tick, so changing the interval in Settings takes effect without a restart.
+AUTO_SYNC_TICK_SECONDS = 30
+auto_sync_stop = threading.Event()
+auto_sync_state: Dict[str, Any] = {"interval": 0, "last_run": None, "next_run": None}
+
+
+def _auto_sync_loop() -> None:
+    next_run: Optional[float] = None
+    last_interval = None
+
+    while not auto_sync_stop.is_set():
+        try:
+            interval = int(getattr(load_config(), "auto_sync_interval", 0) or 0)
+        except Exception:
+            interval = 0
+
+        if interval != last_interval:
+            next_run = None
+            last_interval = interval
+        auto_sync_state["interval"] = interval
+
+        if interval <= 0:
+            next_run = None
+            auto_sync_state["next_run"] = None
+        elif next_run is None:
+            next_run = time.monotonic() + interval * 60
+            auto_sync_state["next_run"] = (
+                datetime.now() + timedelta(minutes=interval)
+            ).isoformat(timespec="seconds")
+        elif time.monotonic() >= next_run:
+            if _claim_sync_slot("Automatic sync starting..."):
+                print(f"[auto-sync] Running scheduled sync (every {interval} min)")
+                run_sync_task("all", force=False)
+                auto_sync_state["last_run"] = datetime.now().isoformat(timespec="seconds")
+            else:
+                print("[auto-sync] Skipped: a sync is already running")
+            next_run = time.monotonic() + interval * 60
+            auto_sync_state["next_run"] = (
+                datetime.now() + timedelta(minutes=interval)
+            ).isoformat(timespec="seconds")
+
+        auto_sync_stop.wait(AUTO_SYNC_TICK_SECONDS)
+
 
 def get_engine() -> SyncEngine:
     cfg = load_config()
@@ -50,7 +107,6 @@ class ConfigUpdateRequest(BaseModel):
     vault_mirror_folder: Optional[str] = None
     daily_folder: Optional[str] = None
     daily_heading: Optional[str] = None
-    mirror_daily: Optional[bool] = None
     ocr_engine: Optional[str] = None
     gemini_api_key: Optional[str] = None
     gemini_model: Optional[str] = None
@@ -60,6 +116,8 @@ class ConfigUpdateRequest(BaseModel):
     ollama_model: Optional[str] = None
     token: Optional[str] = None
     auto_sync_interval: Optional[int] = None
+    download_recordings: Optional[bool] = None
+    max_pages_per_notebook: Optional[int] = None
 
 
 class LoginRequest(BaseModel):
@@ -69,9 +127,10 @@ class LoginRequest(BaseModel):
 
 
 class SyncRequest(BaseModel):
-    scope: str = "all"  # "all", "journals", "paper"
+    scope: str = "all"  # "all", "journals", "paper", or "folder" with resource_id
     force: bool = False
     resource_id: Optional[str] = ""
+    app_type: int = 1
 
 
 @app.get("/api/status")
@@ -304,50 +363,68 @@ def get_transcription_status(uuid: str, page_no: int):
     return {"code": 200, "uuid": uuid, "pageNo": page_no, **job}
 
 
-@app.post("/api/sync")
-def trigger_sync(req: SyncRequest, background_tasks: BackgroundTasks):
-    global sync_status
+def _claim_sync_slot(message: str = "Initializing sync...") -> bool:
+    """Marks a sync as running. Returns False if one already is."""
     with sync_lock:
         if sync_status["is_running"]:
-            return {"code": 409, "message": "Sync is already running.", "status": sync_status}
-
+            return False
         sync_status["is_running"] = True
         sync_status["progress"] = 0.0
-        sync_status["message"] = "Initializing sync..."
+        sync_status["message"] = message
         sync_status["error"] = None
         sync_status["last_result"] = None
+    return True
 
-    def run_sync_task(scope: str, force: bool, resource_id: str):
-        global sync_status
-        engine = get_engine()
 
-        def on_progress(msg: str, pct: float):
-            sync_status["message"] = msg
-            sync_status["progress"] = pct
+def run_sync_task(scope: str, force: bool, resource_id: str = "", app_type: int = 1) -> None:
+    """Runs a sync and publishes its progress. The slot must already be claimed."""
+    engine = get_engine()
 
-        try:
-            if scope == "journals":
-                count = engine.sync_recent_journals(force=force, progress_cb=on_progress)
-                result = {"scope": "journals", "synced": count}
-            else:
-                result = engine.sync_all(force=force, progress_cb=on_progress)
+    def on_progress(msg: str, pct: float):
+        sync_status["message"] = msg
+        sync_status["progress"] = pct
 
-            sync_status["last_result"] = result
-            sync_status["message"] = "Completed"
-            sync_status["progress"] = 1.0
-        except Exception as e:
-            sync_status["error"] = str(e)
-            sync_status["message"] = f"Failed: {e}"
-        finally:
-            sync_status["is_running"] = False
+    try:
+        if scope == "journals":
+            count = engine.sync_recent_journals(force=force, progress_cb=on_progress)
+            result = {"scope": "journals", "synced": count}
+        elif resource_id:
+            count = engine.sync_resource(
+                app_type=app_type, resource_id=resource_id,
+                force=force, progress_cb=on_progress
+            )
+            result = {"scope": "folder", "resource_id": resource_id,
+                      "app_type": app_type, "synced": count}
+        elif scope == "paper":
+            result = engine.sync_all(force=force, progress_cb=on_progress, app_types=[1])
+            result["scope"] = "paper"
+        else:
+            result = engine.sync_all(force=force, progress_cb=on_progress)
 
-    background_tasks.add_task(run_sync_task, req.scope, req.force, req.resource_id)
+        sync_status["last_result"] = result
+        sync_status["message"] = "Completed"
+        sync_status["progress"] = 1.0
+    except Exception as e:
+        sync_status["error"] = str(e)
+        sync_status["message"] = f"Failed: {e}"
+    finally:
+        sync_status["is_running"] = False
+
+
+@app.post("/api/sync")
+def trigger_sync(req: SyncRequest, background_tasks: BackgroundTasks):
+    if not _claim_sync_slot():
+        return {"code": 409, "message": "Sync is already running.", "status": sync_status}
+
+    background_tasks.add_task(
+        run_sync_task, req.scope, req.force, req.resource_id or "", req.app_type
+    )
     return {"code": 200, "message": "Sync started.", "status": sync_status}
 
 
 @app.get("/api/sync/status")
 def get_sync_status():
-    return {"code": 200, "status": sync_status}
+    return {"code": 200, "status": sync_status, "auto_sync": auto_sync_state}
 
 
 @app.post("/api/config")

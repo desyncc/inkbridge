@@ -82,15 +82,18 @@ async function loadStatus() {
 
 // Maps a settings input element id to the Config field it edits.
 const SETTINGS_FIELDS = {
-  cfgVaultPath: "vault_path",
-  cfgMirrorFolder: "vault_mirror_folder",
-  cfgDailyFolder: "daily_folder",
-  cfgDailyHeading: "daily_heading",
-  cfgOcrEngine: "ocr_engine",
-  cfgOllamaUrl: "ollama_url",
-  cfgOllamaModel: "ollama_model",
-  cfgLMStudioUrl: "lmstudio_url",
-  cfgLMStudioModel: "lmstudio_model"
+  cfgVaultPath: { field: "vault_path" },
+  cfgMirrorFolder: { field: "vault_mirror_folder" },
+  cfgDailyFolder: { field: "daily_folder" },
+  cfgDailyHeading: { field: "daily_heading" },
+  cfgAutoSyncInterval: { field: "auto_sync_interval", type: "number" },
+  cfgMaxPages: { field: "max_pages_per_notebook", type: "number" },
+  cfgDownloadRecordings: { field: "download_recordings", type: "checkbox" },
+  cfgOcrEngine: { field: "ocr_engine" },
+  cfgOllamaUrl: { field: "ollama_url" },
+  cfgOllamaModel: { field: "ollama_model" },
+  cfgLMStudioUrl: { field: "lmstudio_url" },
+  cfgLMStudioModel: { field: "lmstudio_model" }
 };
 
 // Secrets are write-only: the server never sends them back, so an empty
@@ -107,9 +110,12 @@ async function loadSettings() {
     const cfg = data.config || {};
     savedConfig = cfg;
 
-    Object.entries(SETTINGS_FIELDS).forEach(([elId, field]) => {
+    Object.entries(SETTINGS_FIELDS).forEach(([elId, spec]) => {
       const el = document.getElementById(elId);
-      if (el && cfg[field] !== undefined && cfg[field] !== null) el.value = cfg[field];
+      const value = cfg[spec.field];
+      if (!el || value === undefined || value === null) return;
+      if (spec.type === "checkbox") el.checked = Boolean(value);
+      else el.value = value;
     });
 
     Object.entries(SECRET_FIELDS).forEach(([elId, field]) => {
@@ -129,9 +135,17 @@ async function loadSettings() {
 
 function collectSettings() {
   const values = {};
-  Object.entries(SETTINGS_FIELDS).forEach(([elId, field]) => {
+  Object.entries(SETTINGS_FIELDS).forEach(([elId, spec]) => {
     const el = document.getElementById(elId);
-    if (el) values[field] = el.value.trim();
+    if (!el) return;
+    if (spec.type === "checkbox") {
+      values[spec.field] = el.checked;
+    } else if (spec.type === "number") {
+      const n = parseInt(el.value, 10);
+      values[spec.field] = Number.isFinite(n) && n >= 0 ? n : 0;
+    } else {
+      values[spec.field] = el.value.trim();
+    }
   });
   return values;
 }

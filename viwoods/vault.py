@@ -122,14 +122,15 @@ class ObsidianVault:
         uuid: str,
         page_no: Any,
         ext: str = ".png",
+        kind: str = "p",
         title_limit: int = 40
     ) -> str:
         """
-        Builds `<title>_<uuid8>_p<n>.png`, truncating the *title* first so the
-        uuid, page number and extension always survive.
+        Builds `<title>_<uuid8>_p<n>.png` (or `_rec<n>` for audio), truncating
+        the *title* first so the uuid, index and extension always survive.
         """
         safe_title = self._sanitize_filename(note_name, max_length=title_limit)
-        return f"{safe_title}_{(uuid or 'nouuid')[:8]}_p{page_no}{ext}"
+        return f"{safe_title}_{(uuid or 'nouuid')[:8]}_{kind}{page_no}{ext}"
 
     def get_attachment_obsidian_path(self, local_abs_path: str) -> str:
         """Converts an absolute attachment path to Obsidian [[wiki-link]] relative format."""

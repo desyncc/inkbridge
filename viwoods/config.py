@@ -28,7 +28,6 @@ class Config(BaseModel):
     vault_attachments_folder: str = "Viwoods/Attachments"
     daily_folder: str = "10 - Journals"
     daily_heading: str = "# Transcribed text from AiPaper:"
-    mirror_daily: bool = True
 
     # OCR Settings
     ocr_engine: str = "windows"  # "windows", "gemini", "lmstudio", "ollama"
@@ -41,8 +40,8 @@ class Config(BaseModel):
     ollama_think: bool = False
 
     # Sync Preferences
-    auto_sync_interval: int = 0  # 0 = disabled, >0 = minutes
-    download_recordings: bool = True
+    auto_sync_interval: int = 0  # 0 = disabled, >0 = minutes (serve mode)
+    download_recordings: bool = True  # save meeting audio into the attachments folder
     max_pages_per_notebook: int = 50  # Cap on large imported PDF planners
 
 
@@ -51,7 +50,10 @@ def load_config() -> Config:
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return Config(**data)
+                # Drop keys from older versions (e.g. the removed mirror_daily)
+                # so an existing config file still loads.
+                known = set(Config.model_fields)
+                return Config(**{k: v for k, v in data.items() if k in known})
         except Exception as e:
             print(f"Warning: Failed to load config from {CONFIG_PATH}: {e}")
     cfg = Config()

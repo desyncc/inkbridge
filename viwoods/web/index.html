@@ -231,9 +231,22 @@
             <small class="form-hint">The exact section in your daily note template where transcripts will be injected.</small>
           </div>
 
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cfgAutoSyncInterval">Automatic Sync Interval (minutes)</label>
+              <input type="number" id="cfgAutoSyncInterval" class="input-text" min="0" step="5" value="0">
+              <small class="form-hint">0 disables it. While the dashboard is running, a full sync runs on this interval.</small>
+            </div>
+            <div class="form-group">
+              <label for="cfgMaxPages">Max Pages Per Notebook</label>
+              <input type="number" id="cfgMaxPages" class="input-text" min="0" step="10" value="50">
+              <small class="form-hint">Cap on large imported PDF planners. 0 means no cap.</small>
+            </div>
+          </div>
+
           <div class="form-check">
-            <input type="checkbox" id="cfgMirrorDaily" checked>
-            <label for="cfgMirrorDaily">Also keep a mirrored copy under <code>Viwoods/Daily/</code></label>
+            <input type="checkbox" id="cfgDownloadRecordings" checked>
+            <label for="cfgDownloadRecordings">Download meeting audio recordings into the attachments folder</label>
           </div>
         </div>
 

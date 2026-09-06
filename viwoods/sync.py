@@ -3,7 +3,8 @@ import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
+from urllib.parse import urlparse
 
 from .client import ViwoodsClient
 from .config import Config
@@ -163,6 +164,10 @@ class SyncEngine:
                 "raw_page": page
             })
 
+        recordings = detail.get("recordings") or []
+        if recordings and getattr(self.config, "download_recordings", True):
+            self._download_recordings(recordings, uuid, note_name, force=force)
+
         # The detail payload carries no creation time; the folder listing does.
         metadata = dict(detail)
         metadata["created_time"] = next(
@@ -217,6 +222,62 @@ class SyncEngine:
         if progress_cb:
             progress_cb(f"Finished: {note_name}", 1.0)
         return True
+
+    @staticmethod
+    def _recording_url(recording: Dict[str, Any]) -> Optional[str]:
+        """Digs the audio URL out of a recording entry, whatever shape it has."""
+        for key in ("fileURL", "fileUrl", "url", "recordingUrl", "audioUrl"):
+            value = recording.get(key)
+            if isinstance(value, str) and value.startswith("http"):
+                return value
+
+        for key in (
+            "cloudRecordingFileInfo", "recordingFileInfo",
+            "serviceRecordingFileInfo", "cloudAudioFileInfo", "audioFileInfo"
+        ):
+            info = recording.get(key)
+            if isinstance(info, dict):
+                value = info.get("fileURL") or info.get("fileUrl") or info.get("url")
+                if isinstance(value, str) and value.startswith("http"):
+                    return value
+        return None
+
+    def _download_recordings(
+        self,
+        recordings: List[Dict[str, Any]],
+        uuid: str,
+        note_name: str,
+        force: bool = False
+    ) -> None:
+        """
+        Saves each recording into the vault attachments folder and records its
+        path as local_audio_path, which mirror_notebook() links.
+        """
+        for idx, rec in enumerate(recordings, start=1):
+            if not isinstance(rec, dict):
+                continue
+
+            url = self._recording_url(rec)
+            if not url:
+                continue
+
+            ext = os.path.splitext(urlparse(url).path)[1]
+            if len(ext) > 5 or not ext:
+                ext = ".m4a"
+
+            cache_file = LOCAL_CACHE_DIR / f"{uuid}_rec{idx}{ext}"
+            if not cache_file.exists() or force:
+                try:
+                    self.client.download_file(url, str(cache_file))
+                except Exception as e:
+                    print(f"Error downloading recording {idx} for {note_name}: {e}")
+                    continue
+
+            if cache_file.exists():
+                dest_name = self.vault.attachment_filename(
+                    note_name, uuid, idx, ext=ext, kind="rec"
+                )
+                rec["local_audio_path"] = self.vault.save_attachment(str(cache_file), dest_name)
 
     def sync_folder(
         self,
@@ -291,11 +352,17 @@ class SyncEngine:
     def sync_all(
         self,
         force: bool = False,
-        progress_cb: Optional[Callable[[str, float], None]] = None
+        progress_cb: Optional[Callable[[str, float], None]] = None,
+        app_types: Optional[Iterable[int]] = None
     ) -> Dict[str, Any]:
-        """Performs full sync across all root apps (Paper, Meeting, Learning, Knowledge Base, Memo)."""
+        """
+        Performs a full sync across the root apps (Paper, Meeting, Learning,
+        Knowledge Base, Memo), or only `app_types` when given.
+        """
         if progress_cb:
             progress_cb("Connecting to Viwoods Cloud...", 0.01)
+
+        wanted = set(app_types) if app_types is not None else None
 
         # Refresh device info
         self.client.get_devices()
@@ -308,6 +375,9 @@ class SyncEngine:
             name = rf.get("name", "Unknown")
             app_type = rf.get("appType", 1)
             count = rf.get("count", 0)
+
+            if wanted is not None and app_type not in wanted:
+                continue
 
             # Skip apps with 0 items
             if count == 0:
@@ -338,6 +408,69 @@ class SyncEngine:
             "details": details,
             "timestamp": self.state["last_full_sync"]
         }
+
+    def find_resource_location(
+        self,
+        app_type: int,
+        resource_id: str,
+        max_depth: int = 3
+    ) -> Optional[Dict[str, str]]:
+        """
+        Breadth-first search for a folder by id, returning its name and the
+        mirror path of its parent, so a partial sync lands where a full sync
+        would put it.
+        """
+        root_name = next(
+            (rf.get("name", f"App{app_type}") for rf in self.client.get_root_folders()
+             if rf.get("appType") == app_type),
+            f"App{app_type}"
+        )
+
+        queue = [("", root_name, 0)]  # (folder id, mirror path so far, depth)
+        while queue:
+            folder_id, rel_path, depth = queue.pop(0)
+            if depth > max_depth:
+                continue
+            try:
+                items = self.client.get_folder_items(app_type=app_type, resource_id=folder_id)
+            except Exception:
+                continue
+
+            for it in items:
+                item_id = it.get("uuid") or it.get("resourceId") or ""
+                if item_id == resource_id:
+                    return {"name": it.get("name") or resource_id, "rel_path": rel_path}
+                if it.get("resourceType") in (0, 5) and item_id:
+                    queue.append((item_id, f"{rel_path}/{it.get('name') or item_id}", depth + 1))
+
+        return None
+
+    def sync_resource(
+        self,
+        app_type: int,
+        resource_id: str,
+        force: bool = False,
+        progress_cb: Optional[Callable[[str, float], None]] = None
+    ) -> int:
+        """Syncs a single folder subtree instead of everything."""
+        location = self.find_resource_location(app_type, resource_id)
+        if location:
+            folder_name, rel_path = location["name"], location["rel_path"]
+        else:
+            folder_name, rel_path = resource_id, next(
+                (rf.get("name", f"App{app_type}") for rf in self.client.get_root_folders()
+                 if rf.get("appType") == app_type),
+                f"App{app_type}"
+            )
+
+        return self.sync_folder(
+            app_type=app_type,
+            folder_name=folder_name,
+            resource_id=resource_id,
+            rel_path=rel_path,
+            force=force,
+            progress_cb=progress_cb
+        )
 
     def find_journal_folder(self) -> Optional[Dict[str, Any]]:
         """Locates the 'Journals' folder in the Paper root, if the user has one."""

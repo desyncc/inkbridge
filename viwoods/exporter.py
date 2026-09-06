@@ -13,6 +13,8 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, PageBreak, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 from .config import Config, load_config
 from .sync import LOCAL_CACHE_DIR
@@ -20,6 +22,94 @@ from .client import ViwoodsClient
 from .vault import ObsidianVault
 
 DEFAULT_EXPORT_DIR = Path(__file__).resolve().parent.parent / "exports"
+
+# Helvetica, ReportLab's default, is Latin-1 only: a transcript with CJK,
+# Greek, or symbols renders as black boxes. Any of these families fixes that.
+FONT_SEARCH_DIRS = [
+    Path("/usr/share/fonts"),
+    Path("/usr/local/share/fonts"),
+    Path.home() / ".local/share/fonts",
+    Path.home() / ".fonts",
+    Path("/Library/Fonts"),
+    Path("/System/Library/Fonts"),
+    Path("C:/Windows/Fonts"),
+]
+
+FONT_FAMILIES = [
+    # CJK-capable TTFs first: they cover Latin too, so they are the widest
+    # single-family choice. (ReportLab cannot read the .ttc/CFF collections
+    # that Noto Sans CJK usually ships as, hence the per-script TTFs.)
+    ("NotoSansJP", "NotoSansJP-Regular.ttf", "NotoSansJP-Bold.ttf",
+     "NotoSansJP-Regular.ttf", "NotoSansJP-Bold.ttf"),
+    ("NotoSansSC", "NotoSansSC-Regular.ttf", "NotoSansSC-Bold.ttf",
+     "NotoSansSC-Regular.ttf", "NotoSansSC-Bold.ttf"),
+    ("DejaVuSans", "DejaVuSans.ttf", "DejaVuSans-Bold.ttf",
+     "DejaVuSans-Oblique.ttf", "DejaVuSans-BoldOblique.ttf"),
+    ("NotoSans", "NotoSans-Regular.ttf", "NotoSans-Bold.ttf",
+     "NotoSans-Italic.ttf", "NotoSans-BoldItalic.ttf"),
+    ("ArialUnicode", "arialuni.ttf", "arialuni.ttf", "arialuni.ttf", "arialuni.ttf"),
+    ("Arial", "arial.ttf", "arialbd.ttf", "ariali.ttf", "arialbi.ttf"),
+]
+
+_unicode_font: Optional[str] = None
+
+
+def _find_font_file(directory: Path, filename: str) -> Optional[Path]:
+    if not directory.is_dir():
+        return None
+    direct = directory / filename
+    if direct.exists():
+        return direct
+    try:
+        return next(directory.rglob(filename), None)
+    except OSError:
+        return None
+
+
+def register_unicode_font() -> str:
+    """
+    Registers the first Unicode TTF family found on this machine and returns
+    its name, or "" if none is available. Resolved once per process.
+    """
+    global _unicode_font
+    if _unicode_font is not None:
+        return _unicode_font
+
+    for family, regular, bold, italic, bold_italic in FONT_FAMILIES:
+        for directory in FONT_SEARCH_DIRS:
+            regular_path = _find_font_file(directory, regular)
+            if not regular_path:
+                continue
+            try:
+                pdfmetrics.registerFont(TTFont(family, str(regular_path)))
+                variants = {"normal": family}
+                for style, filename in (("bold", bold), ("italic", italic),
+                                        ("boldItalic", bold_italic)):
+                    path = _find_font_file(directory, filename)
+                    if path:
+                        name = f"{family}-{style}"
+                        pdfmetrics.registerFont(TTFont(name, str(path)))
+                        variants[style] = name
+
+                pdfmetrics.registerFontFamily(
+                    family,
+                    normal=variants["normal"],
+                    bold=variants.get("bold", family),
+                    italic=variants.get("italic", family),
+                    boldItalic=variants.get("boldItalic", family),
+                )
+                _unicode_font = family
+                return family
+            except Exception:
+                continue
+
+    print(
+        "Note: no Unicode TTF font found (looked for Noto Sans JP/SC, "
+        "DejaVu Sans, Noto Sans, Arial). Non-Latin text in PDF exports may "
+        "render as boxes."
+    )
+    _unicode_font = ""
+    return ""
 
 
 def _inline_markdown(text: str) -> str:
@@ -107,12 +197,14 @@ def markdown_to_html(md_text: str) -> str:
     return "\n".join(blocks)
 
 
-def parse_markdown_to_flowables(md_text: str, styles) -> List[Any]:
+def parse_markdown_to_flowables(md_text: str, styles, font_name: str = "") -> List[Any]:
     """Converts a Markdown string into ReportLab flowables."""
     flowables = []
     lines = md_text.strip().split("\n")
     in_code = False
     code_lines = []
+
+    unicode_font = {"fontName": font_name} if font_name else {}
 
     body_style = ParagraphStyle(
         "ExportBody",
@@ -120,7 +212,8 @@ def parse_markdown_to_flowables(md_text: str, styles) -> List[Any]:
         fontSize=10,
         leading=14,
         textColor=colors.HexColor("#1e293b"),
-        spaceAfter=4
+        spaceAfter=4,
+        **unicode_font
     )
     h1_style = ParagraphStyle(
         "ExportH1",
@@ -129,7 +222,8 @@ def parse_markdown_to_flowables(md_text: str, styles) -> List[Any]:
         leading=19,
         spaceBefore=10,
         spaceAfter=6,
-        textColor=colors.HexColor("#0f172a")
+        textColor=colors.HexColor("#0f172a"),
+        **unicode_font
     )
     h2_style = ParagraphStyle(
         "ExportH2",
@@ -138,7 +232,8 @@ def parse_markdown_to_flowables(md_text: str, styles) -> List[Any]:
         leading=16,
         spaceBefore=8,
         spaceAfter=4,
-        textColor=colors.HexColor("#1e293b")
+        textColor=colors.HexColor("#1e293b"),
+        **unicode_font
     )
     h3_style = ParagraphStyle(
         "ExportH3",
@@ -147,7 +242,8 @@ def parse_markdown_to_flowables(md_text: str, styles) -> List[Any]:
         leading=14,
         spaceBefore=6,
         spaceAfter=3,
-        textColor=colors.HexColor("#334155")
+        textColor=colors.HexColor("#334155"),
+        **unicode_font
     )
     bullet_style = ParagraphStyle(
         "ExportBullet",
@@ -156,7 +252,8 @@ def parse_markdown_to_flowables(md_text: str, styles) -> List[Any]:
         leading=13.5,
         leftIndent=14,
         spaceAfter=3,
-        textColor=colors.HexColor("#334155")
+        textColor=colors.HexColor("#334155"),
+        **unicode_font
     )
     code_style = ParagraphStyle(
         "ExportCode",
@@ -456,6 +553,9 @@ class NoteExporter:
         )
 
         styles = getSampleStyleSheet()
+        font_name = register_unicode_font()
+        unicode_font = {"fontName": font_name} if font_name else {}
+
         title_style = ParagraphStyle(
             "PdfTitle",
             parent=styles["Title"],
@@ -463,7 +563,8 @@ class NoteExporter:
             leading=26,
             textColor=colors.HexColor("#0f172a"),
             alignment=0,
-            spaceAfter=4
+            spaceAfter=4,
+            **unicode_font
         )
         meta_style = ParagraphStyle(
             "PdfMeta",
@@ -471,7 +572,8 @@ class NoteExporter:
             fontSize=9.5,
             leading=13,
             textColor=colors.HexColor("#64748b"),
-            spaceAfter=12
+            spaceAfter=12,
+            **unicode_font
         )
         page_head_style = ParagraphStyle(
             "PdfPageHead",
@@ -480,7 +582,8 @@ class NoteExporter:
             leading=17,
             textColor=colors.HexColor("#1e293b"),
             spaceBefore=10,
-            spaceAfter=6
+            spaceAfter=6,
+            **unicode_font
         )
 
         story = []
@@ -492,7 +595,6 @@ class NoteExporter:
         story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e2e8f0"), spaceBefore=2, spaceAfter=14))
 
         available_w = letter[0] - (2 * margin)  # 540 pt
-        available_h = letter[1] - (2 * margin) - 60  # ~660 pt
 
         for idx, p in enumerate(note["pages"], start=1):
             if idx > 1:
@@ -525,7 +627,7 @@ class NoteExporter:
                     story.append(PageBreak())
                     story.append(Paragraph(f"Page {p['page_no']} &mdash; Transcription", page_head_style))
 
-                flowables = parse_markdown_to_flowables(transcript_text, styles)
+                flowables = parse_markdown_to_flowables(transcript_text, styles, font_name=font_name)
                 story.extend(flowables)
                 story.append(Spacer(1, 10))
             elif not has_image:

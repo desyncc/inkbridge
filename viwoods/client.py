@@ -11,15 +11,24 @@ import httpx
 from .config import Config, NO_TOKEN_MESSAGE
 
 
-def sign_data(data: Dict[str, Any], uri_path: str, secret_key: str) -> str:
-    """Computes the Viwoods Cloud MD5 request signature."""
-    data_copy = dict(data)
-    data_copy["uri"] = "/" + uri_path.lstrip("/")
-    sorted_keys = sorted(data_copy.keys())
-    parts = []
-    for k in sorted_keys:
-        v = data_copy[k]
-        parts.append(f"{k}={v}")
+def _sign_value(value: Any) -> str:
+    """
+    Renders one payload value the way the server sees it in the JSON body.
+
+    Python's f-string would render True as "True" and a nested dict with
+    single quotes, neither of which is what was actually sent.
+    """
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
+def sign_data(data: Dict[str, Any], secret_key: str) -> str:
+    """
+    Computes the Viwoods Cloud MD5 request signature over the payload exactly
+    as it is sent (the payload already carries its "uri" key).
+    """
+    parts = [f"{key}={_sign_value(data[key])}" for key in sorted(data)]
     sig_str = "&".join(parts) + secret_key
     return hashlib.md5(sig_str.encode("utf-8")).hexdigest()
 
@@ -109,8 +118,8 @@ class ViwoodsClient:
         self.config = config
         self.http = httpx.Client(timeout=30.0)
 
-    def _headers(self, data: Dict[str, Any], uri_path: str) -> Dict[str, str]:
-        sign = sign_data(data, uri_path, self.config.secret_key)
+    def _headers(self, data: Dict[str, Any]) -> Dict[str, str]:
+        sign = sign_data(data, self.config.secret_key)
         headers = {
             "Content-Type": "application/json",
             "System-Version": "1.0.0",
@@ -134,7 +143,7 @@ class ViwoodsClient:
         payload = dict(data or {})
         payload["uri"] = "/" + uri
 
-        headers = self._headers(payload, uri)
+        headers = self._headers(payload)
 
         url = f"{self.config.api_base_url}/{uri}"
         resp = self.http.post(url, json=payload, headers=headers)

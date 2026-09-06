@@ -153,6 +153,28 @@ def get_folder_contents(app_type: int, resource_id: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/journals")
+def get_journal_items():
+    """
+    Lists the entries in the user's Journals folder, discovered the same way
+    SyncEngine.sync_recent_journals() discovers it.
+    """
+    engine = get_engine()
+    try:
+        folder = engine.find_journal_folder()
+        if not folder:
+            return {"code": 200, "folder": None, "items": []}
+
+        folder_uuid = folder.get("uuid") or folder.get("resourceId") or ""
+        return {
+            "code": 200,
+            "folder": {"uuid": folder_uuid, "name": folder.get("name")},
+            "items": engine.client.get_folder_items(app_type=1, resource_id=folder_uuid)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/notes")
 def get_synced_notes():
     engine = get_engine()

@@ -6,15 +6,16 @@ let syncPollingTimer = null;
 // Last configuration loaded from the server, used to send partial updates.
 let savedConfig = {};
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   initTabs();
   initSettingsToggles();
+  bindEvents();
+  // Settings first: other views label themselves with the configured folders.
+  await loadSettings();
   loadStatus();
-  loadSettings();
   loadTree();
   loadNotes();
   loadJournals();
-  bindEvents();
 });
 
 // --- Tab Switching ---
@@ -301,14 +302,22 @@ function renderActivePage() {
 async function loadJournals() {
   const container = document.getElementById("journalsContainer");
   try {
-    const res = await fetch("/api/folder/1?resource_id=0d7e25d2-4f39-4122-affa-ea02704a5637");
+    const res = await fetch("/api/journals");
     const data = await res.json();
     const items = data.items || [];
 
-    if (items.length === 0) {
-      container.innerHTML = '<div class="empty-state">No journal entries found in Journals folder.</div>';
+    if (!data.folder) {
+      container.innerHTML = '<div class="empty-state">No <code>Journals</code> folder found in Paper on Viwoods Cloud.</div>';
       return;
     }
+    if (items.length === 0) {
+      container.innerHTML = `<div class="empty-state">No entries in the <code>${escapeHtml(data.folder.name)}</code> folder yet.</div>`;
+      return;
+    }
+
+    const mirrorRoot = savedConfig.vault_mirror_folder || "Viwoods";
+    const dailyFolder = savedConfig.daily_folder || "10 - Journals";
+    const folderName = escapeHtml(data.folder.name || "Journals");
 
     container.innerHTML = items.slice(0, 12).map(it => {
       const dateName = escapeHtml(it.name);
@@ -316,10 +325,10 @@ async function loadJournals() {
         <div class="journal-card">
           <div class="journal-card-header">
             <span class="journal-date">📅 ${dateName}</span>
-            <span class="journal-badge">Journals</span>
+            <span class="journal-badge">${folderName}</span>
           </div>
           <div class="journal-snippet">
-            Mirrored in <code>Viwoods/Paper/Journals/${dateName}.md</code> and injected into <code>10 - Journals/...</code>
+            Mirrored in <code>${escapeHtml(mirrorRoot)}/Paper/${folderName}/${dateName}.md</code> and injected into <code>${escapeHtml(dailyFolder)}/...</code>
           </div>
           <button class="btn btn-sm btn-outline btn-inspect-journal" data-uuid="${it.uuid || it.resourceId}">
             Inspect Handwriting & OCR
@@ -330,7 +339,7 @@ async function loadJournals() {
 
     container.querySelectorAll(".btn-inspect-journal").forEach(btn => {
       btn.addEventListener("click", () => {
-        openInStudio(btn.dataset.uuid);
+        openInStudio(btn.dataset.uuid, 1);
       });
     });
   } catch (err) {

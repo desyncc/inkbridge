@@ -309,6 +309,22 @@ class SyncEngine:
             "timestamp": self.state["last_full_sync"]
         }
 
+    def find_journal_folder(self) -> Optional[Dict[str, Any]]:
+        """Locates the 'Journals' folder in the Paper root, if the user has one."""
+        paper_items = self.client.get_folder_items(app_type=1, resource_id="")
+        for it in paper_items:
+            if it.get("resourceType") in (0, 5) and "journal" in (it.get("name") or "").lower():
+                return it
+        return None
+
+    def list_journal_items(self) -> List[Dict[str, Any]]:
+        """Returns the entries inside the Journals folder (empty if there is none)."""
+        journal_folder = self.find_journal_folder()
+        if not journal_folder:
+            return []
+        j_uuid = journal_folder.get("uuid") or journal_folder.get("resourceId")
+        return self.client.get_folder_items(app_type=1, resource_id=j_uuid)
+
     def sync_recent_journals(
         self,
         days_back: int = 14,
@@ -319,19 +335,9 @@ class SyncEngine:
         if progress_cb:
             progress_cb(f"Scanning for journal entries (last {days_back} days)...", 0.05)
 
-        # Search Paper root for 'Journals' folder
-        paper_items = self.client.get_folder_items(app_type=1, resource_id="")
-        journal_folder = None
-        for it in paper_items:
-            if it.get("resourceType") in (0, 5) and "journal" in (it.get("name") or "").lower():
-                journal_folder = it
-                break
-
-        if not journal_folder:
+        items = self.list_journal_items()
+        if not items:
             return 0
-
-        j_uuid = journal_folder.get("uuid") or journal_folder.get("resourceId")
-        items = self.client.get_folder_items(app_type=1, resource_id=j_uuid)
 
         cutoff = None
         if days_back > 0:

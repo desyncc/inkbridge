@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 from fastapi import FastAPI, BackgroundTasks, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -421,7 +421,11 @@ def run_sync_task(scope: str, force: bool, resource_id: str = "", app_type: int 
 @app.post("/api/sync")
 def trigger_sync(req: SyncRequest, background_tasks: BackgroundTasks):
     if not _claim_sync_slot():
-        return {"code": 409, "message": "Sync is already running.", "status": sync_status}
+        # A real 409, not a 200 whose body says 409.
+        return JSONResponse(
+            status_code=409,
+            content={"code": 409, "message": "Sync is already running.", "status": sync_status}
+        )
 
     background_tasks.add_task(
         run_sync_task, req.scope, req.force, req.resource_id or "", req.app_type

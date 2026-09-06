@@ -4,7 +4,9 @@ Sync your notebooks and daily handwriting from cloud.viwoods.com to Obsidian.
 """
 
 import argparse
+import socket
 import sys
+import threading
 import time
 import traceback
 import webbrowser
@@ -120,6 +122,19 @@ def cmd_journals(days=14, force=False, engine=None):
     print(f"\nCompleted! {count} journal note(s) updated in vault.\n")
 
 
+def _open_browser_when_ready(host, port, url, timeout=20.0):
+    """Waits for the port to accept connections, then opens the browser."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                webbrowser.open(url)
+                return
+        except OSError:
+            time.sleep(0.2)
+    print(f"Dashboard did not start listening within {timeout:.0f}s; open {url} manually.")
+
+
 def cmd_serve(port=8765, host="127.0.0.1", open_browser=True):
     import uvicorn
     from viwoods.server import app
@@ -131,7 +146,12 @@ def cmd_serve(port=8765, host="127.0.0.1", open_browser=True):
     print(f"=======================================================\n")
 
     if open_browser:
-        webbrowser.open(url)
+        # Opening before uvicorn is listening lands on a connection error.
+        threading.Thread(
+            target=_open_browser_when_ready,
+            args=(host, port, url),
+            daemon=True
+        ).start()
 
     # Loopback only: the dashboard exposes the Viwoods token and vault paths.
     uvicorn.run(app, host=host, port=port, log_level="info")

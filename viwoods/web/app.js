@@ -497,7 +497,16 @@ async function startSync(scope) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope: scope, force: false })
     });
-    const data = await res.json();
+
+    if (res.status === 409) {
+      // Already running (possibly started by the auto-sync scheduler):
+      // follow that one instead of reporting an error.
+      msg.textContent = "A sync is already running — following it.";
+      pollSyncProgress();
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
     pollSyncProgress();
   } catch (err) {
     alert("Failed to start sync: " + err.message);

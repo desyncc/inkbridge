@@ -161,7 +161,9 @@ class SyncEngine:
             if target_date:
                 if progress_cb:
                     progress_cb(f"Injecting into daily journal for {target_date}...", 0.95)
-                self.vault.sync_daily_journal(target_date, pages_data, raw_meta=detail)
+                self.vault.sync_daily_journal(
+                    target_date, pages_data, raw_meta=detail, note_uuid=uuid
+                )
 
         # Update state
         self.state["notes"][uuid] = {

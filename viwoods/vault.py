@@ -7,6 +7,60 @@ from typing import Any, Dict, List, Optional
 
 from .config import Config
 
+# Delimiters for the block Viwoods owns inside a daily note. Everything
+# outside START/END is the user's and is never touched.
+VIWOODS_START = "<!-- viwoods:start -->"
+VIWOODS_END = "<!-- viwoods:end -->"
+
+# A daily note can be fed by more than one notebook, so each notebook gets
+# its own sub-block keyed by uuid and is updated independently.
+def _note_start_marker(uuid: str) -> str:
+    return f"<!-- viwoods:note {uuid} -->"
+
+
+def _note_end_marker(uuid: str) -> str:
+    return f"<!-- viwoods:note-end {uuid} -->"
+
+
+def _note_block(uuid: str, body: str) -> str:
+    return f"{_note_start_marker(uuid)}\n{body.strip()}\n{_note_end_marker(uuid)}"
+
+
+def _upsert_note_block(section: str, uuid: str, body: str) -> str:
+    """Replaces this notebook's sub-block inside the section, or appends it."""
+    start_marker = _note_start_marker(uuid)
+    end_marker = _note_end_marker(uuid)
+    block = _note_block(uuid, body)
+
+    start_idx = section.find(start_marker)
+    if start_idx != -1:
+        end_idx = section.find(end_marker, start_idx)
+        if end_idx != -1:
+            tail = section[end_idx + len(end_marker):]
+            return (section[:start_idx] + block + tail).strip("\n")
+        # Dangling start marker (hand-edited): rewrite to the end of the section.
+        return (section[:start_idx] + block).strip("\n")
+
+    existing = section.strip("\n")
+    if existing:
+        return f"{existing}\n\n{block}"
+    return block
+
+
+def _legacy_section_end(rest: str) -> int:
+    """
+    Offset in `rest` (the text following the target heading) where a legacy,
+    marker-less injected section ends: the first heading line at any level or
+    the first `---` rule. `#tag` lines are not headings.
+    """
+    offset = 0
+    for line in rest.splitlines(keepends=True):
+        stripped = line.rstrip("\r\n")
+        if offset and (re.match(r"^#{1,6}[ \t]", stripped) or stripped.strip() == "---"):
+            return offset
+        offset += len(line)
+    return len(rest)
+
 
 class ObsidianVault:
     def __init__(self, config: Config):
@@ -146,17 +200,81 @@ class ObsidianVault:
 
         return target_file
 
+    def render_journal_body(self, pages_data: List[Dict[str, Any]]) -> str:
+        """Renders one notebook's pages into the markdown injected into a daily note."""
+        lines_to_inject = []
+        for idx, p in enumerate(pages_data, start=1):
+            img_path = p.get("local_image_path")
+            if img_path and os.path.exists(img_path):
+                wiki_link = self.get_attachment_obsidian_path(img_path)
+                lines_to_inject.append(f"![[{wiki_link}]]\n")
+
+            transcript = (p.get("transcript") or "").strip()
+            if transcript:
+                lines_to_inject.append(f"{transcript}\n")
+
+        return "\n".join(lines_to_inject).strip()
+
+    def inject_journal_section(self, content: str, heading: str, uuid: str, body: str) -> str:
+        """
+        Injects `body` into `content` under `heading`, between explicit
+        <!-- viwoods:start --> / <!-- viwoods:end --> markers, touching nothing
+        outside them. Only the sub-block belonging to `uuid` is rewritten.
+        """
+        heading = heading.strip()
+        match = re.search(rf"^{re.escape(heading)}[ \t]*$", content, re.MULTILINE)
+
+        if not match:
+            # Heading absent: append a fresh, fully marked section.
+            section = _upsert_note_block("", uuid, body)
+            prefix = content.rstrip("\n")
+            separator = "\n\n---\n\n" if prefix else ""
+            return f"{prefix}{separator}{heading}\n{VIWOODS_START}\n{section}\n{VIWOODS_END}\n"
+
+        # Only the first occurrence of the heading is used; any later copy is
+        # ordinary user content and is left alone.
+        head_end = match.end()
+        rest = content[head_end:]
+
+        start_idx = rest.find(VIWOODS_START)
+        end_idx = rest.find(VIWOODS_END, start_idx + len(VIWOODS_START)) if start_idx != -1 else -1
+
+        if start_idx != -1 and end_idx != -1:
+            gap = rest[:start_idx]
+            section = rest[start_idx + len(VIWOODS_START):end_idx]
+            tail = rest[end_idx + len(VIWOODS_END):]
+            new_section = _upsert_note_block(section, uuid, body)
+            return (
+                content[:head_end] + gap + VIWOODS_START + "\n" +
+                new_section + "\n" + VIWOODS_END + tail
+            )
+
+        # Legacy note: heading present but never marked. Wrap the region from
+        # the heading up to the next heading / rule and take ownership of it.
+        stop = _legacy_section_end(rest)
+        tail = rest[stop:]
+        new_section = _upsert_note_block("", uuid, body)
+        rebuilt = (
+            content[:head_end] + "\n" + VIWOODS_START + "\n" +
+            new_section + "\n" + VIWOODS_END + "\n"
+        )
+        if tail.strip():
+            rebuilt += "\n" + tail.lstrip("\n")
+        return rebuilt
+
     def sync_daily_journal(
         self,
         date_str: str,
         pages_data: List[Dict[str, Any]],
-        raw_meta: Optional[Dict[str, Any]] = None
+        raw_meta: Optional[Dict[str, Any]] = None,
+        note_uuid: Optional[str] = None,
+        create_missing: Optional[bool] = None
     ) -> Optional[Path]:
         """
         Locates the user's daily journal note at:
         10 - Journals/<Month>/YYYY-MM-DD.md
-        and non-destructively injects the transcribed text and page scans
-        under the dedicated heading '# Transcribed text from AiPaper:'.
+        and injects the transcribed text and page scans between explicit
+        markers under the heading '# Transcribed text from AiPaper:'.
         """
         try:
             dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -173,67 +291,43 @@ class ObsidianVault:
             if fallback_note.exists():
                 target_note = fallback_note
 
-        # Format transcribed content to insert
-        lines_to_inject = []
-        for idx, p in enumerate(pages_data, start=1):
-            page_no = p.get("pageNo", idx)
-            img_path = p.get("local_image_path")
-            if img_path and os.path.exists(img_path):
-                wiki_link = self.get_attachment_obsidian_path(img_path)
-                lines_to_inject.append(f"![[{wiki_link}]]\n")
-
-            transcript = p.get("transcript", "").strip()
-            if transcript:
-                lines_to_inject.append(f"{transcript}\n")
-
-        injected_block = "\n".join(lines_to_inject).strip()
+        uuid = note_uuid or "default"
+        body = self.render_journal_body(pages_data)
+        heading = self.config.daily_heading.strip()
 
         if target_note.exists():
-            with open(target_note, "r", encoding="utf-8") as f:
-                content = f.read()
+            raw = target_note.read_bytes()
+            newline = "\r\n" if b"\r\n" in raw else "\n"
+            content = raw.decode("utf-8").replace("\r\n", "\n")
 
-            target_heading = self.config.daily_heading.strip()
-            heading_pattern = rf"({re.escape(target_heading)})(.*)"
+            new_content = self.inject_journal_section(content, heading, uuid, body)
 
-            if re.search(rf"^{re.escape(target_heading)}", content, re.MULTILINE):
-                # Heading exists: replace content following heading
-                # Split at heading
-                parts = re.split(rf"(^{re.escape(target_heading)}\s*)", content, flags=re.MULTILINE)
-                # parts[0]: before heading, parts[1]: heading, parts[2]: rest
-                before = parts[0]
-                heading = parts[1]
-                after = parts[2] if len(parts) > 2 else ""
-
-                # If there's a subsequent top-level heading (# Other), keep it
-                after_match = re.search(r"\n(#[^#].*)", after)
-                if after_match:
-                    trailing = after[after_match.start():]
-                else:
-                    trailing = ""
-
-                new_content = f"{before}{heading}\n\n{injected_block}\n{trailing}".rstrip() + "\n"
-            else:
-                # Heading doesn't exist yet: append cleanly to note
-                new_content = content.rstrip() + f"\n\n---\n\n{target_heading}\n\n{injected_block}\n"
-
-            with open(target_note, "w", encoding="utf-8") as f:
+            with open(target_note, "w", encoding="utf-8", newline=newline) as f:
                 f.write(new_content)
 
             return target_note
-        else:
-            # If the user hasn't created today's note yet, create it cleanly
-            month_dir.mkdir(parents=True, exist_ok=True)
-            template_content = (
-                f"---\n"
-                f"tags:\n"
-                f"  - daily-journal\n"
-                f"date: {date_str}\n"
-                f"---\n\n"
-                f"## 🗓️ Timeline\n\n"
-                f"---\n\n"
-                f"{self.config.daily_heading}\n\n"
-                f"{injected_block}\n"
-            )
-            with open(target_note, "w", encoding="utf-8") as f:
-                f.write(template_content)
-            return target_note
+
+        if create_missing is None:
+            create_missing = getattr(self.config, "create_missing_daily_notes", True)
+        if not create_missing:
+            return None
+
+        # If the user hasn't created today's note yet, create it cleanly
+        month_dir.mkdir(parents=True, exist_ok=True)
+        section = _upsert_note_block("", uuid, body)
+        template_content = (
+            f"---\n"
+            f"tags:\n"
+            f"  - daily-journal\n"
+            f"date: {date_str}\n"
+            f"---\n\n"
+            f"## 🗓️ Timeline\n\n"
+            f"---\n\n"
+            f"{heading}\n"
+            f"{VIWOODS_START}\n"
+            f"{section}\n"
+            f"{VIWOODS_END}\n"
+        )
+        with open(target_note, "w", encoding="utf-8") as f:
+            f.write(template_content)
+        return target_note

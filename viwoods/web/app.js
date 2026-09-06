@@ -3,11 +3,14 @@
 let activeNote = null;
 let activePageIndex = 0;
 let syncPollingTimer = null;
+// Last configuration loaded from the server, used to send partial updates.
+let savedConfig = {};
 
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initSettingsToggles();
   loadStatus();
+  loadSettings();
   loadTree();
   loadNotes();
   loadJournals();
@@ -30,20 +33,22 @@ function initTabs() {
   });
 }
 
+// Single source of truth for engine-specific settings visibility.
+function updateEngineSections() {
+  const val = document.getElementById("cfgOcrEngine").value;
+  const sections = {
+    ollama: document.getElementById("secOllama"),
+    gemini: document.getElementById("secGemini"),
+    lmstudio: document.getElementById("secLMStudio")
+  };
+  Object.entries(sections).forEach(([engine, el]) => {
+    if (el) el.classList.toggle("hidden", val !== engine);
+  });
+}
+
 function initSettingsToggles() {
-  const select = document.getElementById("cfgOcrEngine");
-  const secGemini = document.getElementById("secGemini");
-  const secLMStudio = document.getElementById("secLMStudio");
-
-  function update() {
-    secGemini.classList.add("hidden");
-    secLMStudio.classList.add("hidden");
-    if (select.value === "gemini") secGemini.classList.remove("hidden");
-    if (select.value === "lmstudio") secLMStudio.classList.remove("hidden");
-  }
-
-  select.addEventListener("change", update);
-  update();
+  document.getElementById("cfgOcrEngine").addEventListener("change", updateEngineSections);
+  updateEngineSections();
 }
 
 // --- API Calls ---
@@ -69,18 +74,65 @@ async function loadStatus() {
     vaultText.textContent = `Obsidian: ${mirrorFolder}/ (${data.vault.notes_synced} synced)`;
     document.getElementById("lblVaultMirror").textContent = `${mirrorFolder}/`;
     document.getElementById("lblDailyFolder").textContent = `${data.vault.daily_folder}/`;
-
-    // Populate Settings Inputs
-    document.getElementById("cfgVaultPath").value = data.vault.path || "";
-    document.getElementById("cfgMirrorFolder").value = mirrorFolder;
-    document.getElementById("cfgOcrEngine").value = data.ocr.engine || "ollama";
-    if (data.ocr.ollama_url) document.getElementById("cfgOllamaUrl").value = data.ocr.ollama_url;
-    if (data.ocr.ollama_model) document.getElementById("cfgOllamaModel").value = data.ocr.ollama_model;
-    if (data.ocr.lmstudio_url) document.getElementById("cfgLMStudioUrl").value = data.ocr.lmstudio_url;
-    document.getElementById("cfgOcrEngine").dispatchEvent(new Event("change"));
   } catch (err) {
     console.error("Failed to load status:", err);
   }
+}
+
+// Maps a settings input element id to the Config field it edits.
+const SETTINGS_FIELDS = {
+  cfgVaultPath: "vault_path",
+  cfgMirrorFolder: "vault_mirror_folder",
+  cfgDailyFolder: "daily_folder",
+  cfgDailyHeading: "daily_heading",
+  cfgOcrEngine: "ocr_engine",
+  cfgOllamaUrl: "ollama_url",
+  cfgOllamaModel: "ollama_model",
+  cfgLMStudioUrl: "lmstudio_url",
+  cfgLMStudioModel: "lmstudio_model"
+};
+
+// Secrets are write-only: the server never sends them back, so an empty
+// field means "leave the stored value alone", not "clear it".
+const SECRET_FIELDS = {
+  cfgGeminiKey: "gemini_api_key",
+  cfgToken: "token"
+};
+
+async function loadSettings() {
+  try {
+    const res = await fetch("/api/config");
+    const data = await res.json();
+    const cfg = data.config || {};
+    savedConfig = cfg;
+
+    Object.entries(SETTINGS_FIELDS).forEach(([elId, field]) => {
+      const el = document.getElementById(elId);
+      if (el && cfg[field] !== undefined && cfg[field] !== null) el.value = cfg[field];
+    });
+
+    Object.entries(SECRET_FIELDS).forEach(([elId, field]) => {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.value = "";
+      el.placeholder = cfg[`has_${field}`]
+        ? `Saved (${cfg[`${field}_masked`]}) — leave blank to keep`
+        : "Not configured";
+    });
+
+    updateEngineSections();
+  } catch (err) {
+    console.error("Failed to load settings:", err);
+  }
+}
+
+function collectSettings() {
+  const values = {};
+  Object.entries(SETTINGS_FIELDS).forEach(([elId, field]) => {
+    const el = document.getElementById(elId);
+    if (el) values[field] = el.value.trim();
+  });
+  return values;
 }
 
 async function loadTree() {
@@ -341,18 +393,6 @@ function bindEvents() {
     });
   }
 
-  // OCR Engine Selection Toggle
-  const selEngine = document.getElementById("cfgOcrEngine");
-  selEngine.addEventListener("change", () => {
-    const val = selEngine.value;
-    const secOllama = document.getElementById("secOllama");
-    const secGemini = document.getElementById("secGemini");
-    const secLMStudio = document.getElementById("secLMStudio");
-    if (secOllama) secOllama.classList.toggle("hidden", val !== "ollama");
-    if (secGemini) secGemini.classList.toggle("hidden", val !== "gemini");
-    if (secLMStudio) secLMStudio.classList.toggle("hidden", val !== "lmstudio");
-  });
-
   // Settings Save
   document.getElementById("btnSaveConfig").addEventListener("click", saveSettings);
 }
@@ -420,22 +460,26 @@ function pollSyncProgress() {
 }
 
 async function saveSettings() {
-  const payload = {
-    vault_path: document.getElementById("cfgVaultPath").value.trim(),
-    vault_mirror_folder: document.getElementById("cfgMirrorFolder").value.trim(),
-    daily_folder: document.getElementById("cfgDailyFolder").value.trim(),
-    daily_heading: document.getElementById("cfgDailyHeading").value.trim(),
-    mirror_daily: document.getElementById("cfgMirrorDaily").checked,
-    ocr_engine: document.getElementById("cfgOcrEngine").value,
-    gemini_api_key: document.getElementById("cfgGeminiKey").value.trim(),
-    lmstudio_url: document.getElementById("cfgLMStudioUrl").value.trim(),
-    lmstudio_model: document.getElementById("cfgLMStudioModel").value.trim(),
-    ollama_url: document.getElementById("cfgOllamaUrl") ? document.getElementById("cfgOllamaUrl").value.trim() : "http://localhost:11434",
-    ollama_model: document.getElementById("cfgOllamaModel") ? document.getElementById("cfgOllamaModel").value.trim() : "qwen3-vl:8b-instruct",
-  };
+  // Only send what the user actually changed, so an untouched (and
+  // unreadable) field can never blank out a stored value.
+  const payload = {};
+  Object.entries(collectSettings()).forEach(([field, value]) => {
+    if (savedConfig[field] !== value) payload[field] = value;
+  });
 
-  const tokenVal = document.getElementById("cfgToken").value.trim();
-  if (tokenVal) payload.token = tokenVal;
+  Object.entries(SECRET_FIELDS).forEach(([elId, field]) => {
+    const el = document.getElementById(elId);
+    const value = el ? el.value.trim() : "";
+    if (value) payload[field] = value;
+  });
+
+  const lbl = document.getElementById("lblConfigSaved");
+  if (Object.keys(payload).length === 0) {
+    lbl.textContent = "No changes";
+    lbl.classList.remove("hidden");
+    setTimeout(() => { lbl.classList.add("hidden"); lbl.textContent = "✓ Settings saved"; }, 2000);
+    return;
+  }
 
   try {
     const res = await fetch("/api/config", {
@@ -443,10 +487,10 @@ async function saveSettings() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-    const data = await res.json();
-    const lbl = document.getElementById("lblConfigSaved");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     lbl.classList.remove("hidden");
     setTimeout(() => { lbl.classList.add("hidden"); }, 3000);
+    await loadSettings();
     loadStatus();
   } catch (err) {
     alert("Failed to save config: " + err.message);

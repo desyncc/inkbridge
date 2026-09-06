@@ -186,6 +186,8 @@ class ViwoodsClient:
         res = self.post("api/v1/resourceSync/getRootFolder", {})
         return res.get("data", [])
 
+    MAX_FOLDER_PAGES = 200  # safety valve against a server that never stops paging
+
     def get_folder_items(
         self,
         app_type: int = 1,
@@ -194,21 +196,53 @@ class ViwoodsClient:
         page_index: int = 1,
         page_size: int = 100
     ) -> List[Dict[str, Any]]:
-        """Lists notebooks and subfolders inside a given folder."""
-        data = {
-            "pageIndex": page_index,
-            "pageSize": page_size,
-            "appType": app_type,
-            "resourceId": resource_id or "",
-            "isDelete": -1,
-            "subTab": sub_tab,
-            "resourceType": -1,
-            "star": -1,
-            "sortField": "last_modified_time",
-            "sortOrder": "desc"
-        }
-        res = self.post("api/v1/resourceSync/getPage", data)
-        return res.get("data", {}).get("list", [])
+        """
+        Lists every notebook and subfolder inside a given folder, walking all
+        pages from `page_index` onwards.
+        """
+        items: List[Dict[str, Any]] = []
+        seen_ids = set()
+        current_page = page_index
+
+        while current_page < page_index + self.MAX_FOLDER_PAGES:
+            data = {
+                "pageIndex": current_page,
+                "pageSize": page_size,
+                "appType": app_type,
+                "resourceId": resource_id or "",
+                "isDelete": -1,
+                "subTab": sub_tab,
+                "resourceType": -1,
+                "star": -1,
+                "sortField": "last_modified_time",
+                "sortOrder": "desc"
+            }
+            res = self.post("api/v1/resourceSync/getPage", data)
+            payload = res.get("data") or {}
+            if not isinstance(payload, dict):
+                break
+
+            page_items = payload.get("list") or []
+            for it in page_items:
+                key = it.get("uuid") or it.get("resourceId")
+                # De-duplicate: sorting by last_modified_time can repeat an
+                # item across page boundaries if the folder changes mid-walk.
+                if key:
+                    if key in seen_ids:
+                        continue
+                    seen_ids.add(key)
+                items.append(it)
+
+            if len(page_items) < page_size:
+                break
+
+            total = payload.get("total") or payload.get("totalCount")
+            if isinstance(total, (int, float)) and len(items) >= int(total):
+                break
+
+            current_page += 1
+
+        return items
 
     APP_SYNC_ENDPOINTS = {
         1: "api/v1/paperSync/get",

@@ -1,6 +1,5 @@
 import base64
 import hashlib
-import json
 import os
 import re
 import subprocess
@@ -10,6 +9,7 @@ from typing import Optional
 import httpx
 
 from .config import Config
+from .jsonstore import read_json, update_json
 
 CACHE_FILE = Path(__file__).resolve().parent.parent / ".viwoods_ocr_cache.json"
 
@@ -22,6 +22,8 @@ class OCREngine:
     def __init__(self, config: Config):
         self.config = config
         self.cache = self._load_cache()
+        # Keys transcribed by this process, merged into the file on each save.
+        self._pending: set = set()
         self._warned: set = set()
 
     def _warn_once(self, key: str, message: str) -> None:
@@ -39,20 +41,25 @@ class OCREngine:
         }.get(engine, "native") or "default"
 
     def _load_cache(self) -> dict:
-        if CACHE_FILE.exists():
-            try:
-                with open(CACHE_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {}
+        return read_json(CACHE_FILE, {})
 
     def _save_cache(self):
+        """
+        Merges the transcripts produced by this process into the file on disk,
+        so a parallel sync's results are not thrown away.
+        """
+        pending = {key: self.cache[key] for key in self._pending if key in self.cache}
+        if not pending:
+            return
+
+        def mutate(disk_cache: dict) -> None:
+            disk_cache.update(pending)
+
         try:
-            with open(CACHE_FILE, "w", encoding="utf-8") as f:
-                json.dump(self.cache, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+            self.cache = update_json(CACHE_FILE, mutate, {})
+            self._pending.clear()
+        except Exception as e:
+            print(f"Warning: Failed to save OCR cache: {e}")
 
     def get_image_hash(self, image_path: str) -> str:
         h = hashlib.sha256()
@@ -141,6 +148,7 @@ class OCREngine:
 
         if engine_ran:
             self.cache[key] = result
+            self._pending.add(key)
             self._save_cache()
 
         return result

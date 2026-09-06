@@ -1,4 +1,3 @@
-import json
 import os
 import re
 from datetime import datetime, timedelta
@@ -8,6 +7,7 @@ from urllib.parse import urlparse
 
 from .client import ViwoodsClient
 from .config import Config
+from .jsonstore import read_json, update_json
 from .ocr import OCREngine
 from .vault import ObsidianVault
 
@@ -23,19 +23,16 @@ def _page_sort_key(page: Dict[str, Any]):
         return (1, 0)
 
 
+EMPTY_STATE = {"notes": {}, "last_full_sync": None}
+
+
 def load_sync_state() -> dict:
     """Reads the on-disk sync state. Shared with the exporter and the server."""
-    if STATE_FILE.exists():
-        try:
-            with open(STATE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                data.setdefault("notes", {})
-                data.setdefault("last_full_sync", None)
-                return data
-        except Exception:
-            pass
-    return {"notes": {}, "last_full_sync": None}
+    data = read_json(STATE_FILE, EMPTY_STATE)
+    if not isinstance(data.get("notes"), dict):
+        data["notes"] = {}
+    data.setdefault("last_full_sync", None)
+    return data
 
 
 class SyncEngine:
@@ -51,6 +48,8 @@ class SyncEngine:
         self.ocr = ocr or OCREngine(config)
         self.vault = vault or ObsidianVault(config)
         self.state = self._load_state()
+        # Notes updated by this run, merged into the file on each save.
+        self._dirty_notes: set = set()
 
         LOCAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -58,9 +57,29 @@ class SyncEngine:
         return load_sync_state()
 
     def _save_state(self):
+        """
+        Merges the notes this run touched into whatever is on disk now, so a
+        concurrent CLI sync and dashboard sync do not erase each other's work.
+        """
+        dirty_notes = {
+            uuid: self.state["notes"][uuid]
+            for uuid in self._dirty_notes
+            if uuid in self.state["notes"]
+        }
+        last_full_sync = self.state.get("last_full_sync")
+
+        def mutate(disk_state: dict) -> None:
+            notes = disk_state.setdefault("notes", {})
+            if not isinstance(notes, dict):
+                notes = disk_state["notes"] = {}
+            notes.update(dirty_notes)
+            # Never move last_full_sync backwards (ISO strings sort correctly).
+            if last_full_sync and last_full_sync > (disk_state.get("last_full_sync") or ""):
+                disk_state["last_full_sync"] = last_full_sync
+
         try:
-            with open(STATE_FILE, "w", encoding="utf-8") as f:
-                json.dump(self.state, f, indent=2, ensure_ascii=False)
+            self.state = update_json(STATE_FILE, mutate, EMPTY_STATE)
+            self._dirty_notes.clear()
         except Exception as e:
             print(f"Warning: Failed to save sync state: {e}")
 
@@ -217,6 +236,7 @@ class SyncEngine:
             "total_pages": total_pages,
             "synced_at": datetime.now().isoformat()
         }
+        self._dirty_notes.add(uuid)
         self._save_state()
 
         if progress_cb:

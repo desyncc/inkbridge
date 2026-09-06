@@ -21,6 +21,91 @@ from .vault import ObsidianVault
 DEFAULT_EXPORT_DIR = Path(__file__).resolve().parent.parent / "exports"
 
 
+def _inline_markdown(text: str) -> str:
+    """Escapes a line, then applies inline code / bold / italic."""
+    out = html.escape(text)
+    out = re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+    out = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", out)
+    out = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"<em>\1</em>", out)
+    return out
+
+
+def markdown_to_html(md_text: str) -> str:
+    """
+    Converts a transcript to block-level HTML, line by line.
+
+    Markdown is line-oriented, so every heading/bullet decision has to be made
+    before newlines are turned into <br/> — otherwise only the first line of
+    the transcript can ever match `^# `.
+    """
+    lines = (md_text or "").replace("\r\n", "\n").split("\n")
+    blocks: List[str] = []
+    paragraph: List[str] = []
+    list_items: List[str] = []
+    list_tag = ""
+
+    def flush_paragraph():
+        if paragraph:
+            blocks.append("<p>" + "<br/>".join(paragraph) + "</p>")
+            paragraph.clear()
+
+    def flush_list():
+        nonlocal list_tag
+        if list_items:
+            body = "".join(f"<li>{item}</li>" for item in list_items)
+            blocks.append(f"<{list_tag}>{body}</{list_tag}>")
+            list_items.clear()
+        list_tag = ""
+
+    for raw_line in lines:
+        line = raw_line.strip()
+
+        if not line:
+            flush_paragraph()
+            flush_list()
+            continue
+
+        if line in ("---", "***", "___"):
+            flush_paragraph()
+            flush_list()
+            blocks.append("<hr/>")
+            continue
+
+        heading = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if heading:
+            flush_paragraph()
+            flush_list()
+            level = len(heading.group(1))
+            blocks.append(f"<h{level}>{_inline_markdown(heading.group(2))}</h{level}>")
+            continue
+
+        bullet = re.match(r"^([-*+]|\d+\.)\s+(.*)$", line)
+        if bullet:
+            flush_paragraph()
+            tag = "ol" if bullet.group(1).endswith(".") else "ul"
+            if list_tag and list_tag != tag:
+                flush_list()
+            list_tag = tag
+
+            item = bullet.group(2)
+            checkbox = re.match(r"^\[([ xX])\]\s*(.*)$", item)
+            if checkbox:
+                checked = " checked" if checkbox.group(1).lower() == "x" else ""
+                list_items.append(
+                    f'<input type="checkbox" disabled{checked}/> {_inline_markdown(checkbox.group(2))}'
+                )
+            else:
+                list_items.append(_inline_markdown(item))
+            continue
+
+        flush_list()
+        paragraph.append(_inline_markdown(line))
+
+    flush_paragraph()
+    flush_list()
+    return "\n".join(blocks)
+
+
 def parse_markdown_to_flowables(md_text: str, styles) -> List[Any]:
     """Converts a Markdown string into ReportLab flowables."""
     flowables = []
@@ -477,13 +562,9 @@ class NoteExporter:
                 except Exception:
                     img_tag = ""
 
-            escaped_transcript = html.escape(transcript).replace("\n", "<br/>")
-            escaped_transcript = re.sub(r"^### (.*?)$", r"<h3>\1</h3>", escaped_transcript, flags=re.MULTILINE)
-            escaped_transcript = re.sub(r"^## (.*?)$", r"<h2>\1</h2>", escaped_transcript, flags=re.MULTILINE)
-            escaped_transcript = re.sub(r"^# (.*?)$", r"<h1>\1</h1>", escaped_transcript, flags=re.MULTILINE)
-            escaped_transcript = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", escaped_transcript)
+            rendered_transcript = markdown_to_html(transcript)
 
-            transcript_box = f'<div class="transcript-box"><div class="transcript-label">📝 Transcription</div><div class="transcript-content">{escaped_transcript}</div></div>' if transcript else ''
+            transcript_box = f'<div class="transcript-box"><div class="transcript-label">📝 Transcription</div><div class="transcript-content">{rendered_transcript}</div></div>' if transcript else ''
 
             layout_class = "side-by-side" if (img_tag and transcript_box) else "single-col"
 
@@ -625,8 +706,30 @@ class NoteExporter:
     }}
     .transcript-content {{
       font-family: inherit;
-      white-space: pre-wrap;
       word-break: break-word;
+    }}
+    .transcript-content > *:first-child {{ margin-top: 0; }}
+    .transcript-content p {{ margin: 0 0 10px; }}
+    .transcript-content h1 {{ font-size: 19px; margin: 16px 0 8px; }}
+    .transcript-content h2 {{ font-size: 16px; margin: 14px 0 7px; }}
+    .transcript-content h3 {{ font-size: 14.5px; margin: 12px 0 6px; }}
+    .transcript-content h4,
+    .transcript-content h5,
+    .transcript-content h6 {{ font-size: 14px; margin: 12px 0 6px; }}
+    .transcript-content ul,
+    .transcript-content ol {{ margin: 0 0 10px; padding-left: 22px; }}
+    .transcript-content li {{ margin-bottom: 3px; }}
+    .transcript-content code {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+      background: #f1f5f9;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }}
+    .transcript-content hr {{
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 12px 0;
     }}
     @media (max-width: 768px) {{
       .side-by-side {{ grid-template-columns: 1fr; }}

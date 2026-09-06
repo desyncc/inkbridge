@@ -39,7 +39,7 @@ class Config(BaseModel):
     lmstudio_url: str = "http://localhost:1234/v1"
     lmstudio_model: str = "qwen2.5-vl-7b-instruct"
     ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen3-vl:8b-instruct"
+    ollama_model: str = "qwen3.5:9b"
     ollama_think: bool = False
 
     # Sync Preferences

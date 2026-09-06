@@ -266,7 +266,7 @@ def main():
     # set-engine
     p_engine = subparsers.add_parser("set-engine", help="Change default OCR engine")
     p_engine.add_argument("engine", choices=["windows", "ollama", "gemini", "lmstudio"], help="OCR engine name")
-    p_engine.add_argument("--model", type=str, help="Model name (e.g. qwen3-vl:8b-instruct)")
+    p_engine.add_argument("--model", type=str, help="Model name (e.g. qwen3.5:9b)")
     p_engine.add_argument("--url", type=str, help="API URL (e.g. http://localhost:11434)")
 
     # status

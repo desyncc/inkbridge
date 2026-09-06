@@ -16,7 +16,7 @@ It mirrors your tablet's folder hierarchy, downloads high-resolution ink scans, 
   - A note that has the heading but no markers (written by an older version) is migrated on the next sync: the markers are inserted after the heading and the block ends at the next heading of any level or the next `---`.
   - Includes both high-resolution page image embeds and transcribed text.
 - **🔍 Multi-Engine OCR Pipeline**:
-  - **Ollama Vision (default)**: local vision LLMs (e.g. `qwen3-vl:8b-instruct`, `qwen2.5-vl-7b-instruct`) via native `/api/chat`. Zero cloud dependencies.
+  - **Ollama Vision (default)**: local vision LLMs (e.g. `qwen3.5:9b`, `qwen2.5-vl-7b-instruct`) via native `/api/chat`. Zero cloud dependencies.
   - **Google Gemini Vision**: multimodal cloud transcription via a Google AI Studio API key (`gemini-2.0-flash`).
   - **Local LM Studio**: any OpenAI-compatible vision endpoint.
   - **Windows Native OCR**: 100% offline via `Windows.Media.Ocr`. **Windows only** — on Linux/macOS the app reports it and transcribes nothing, so pick another engine there.
@@ -89,7 +89,7 @@ default:
   "lmstudio_url": "http://localhost:1234/v1",
   "lmstudio_model": "qwen2.5-vl-7b-instruct",
   "ollama_url": "http://localhost:11434",
-  "ollama_model": "qwen3-vl:8b-instruct",
+  "ollama_model": "qwen3.5:9b",
   "ollama_think": false,
 
   "auto_sync_interval": 0,
@@ -145,7 +145,7 @@ Verifies cloud credentials, reports device serial number, and lists cloud catego
 ### Change OCR Engine
 ```bash
 # Local Ollama (default)
-python companion.py set-engine ollama --model qwen3-vl:8b-instruct
+python companion.py set-engine ollama --model qwen3.5:9b
 
 # Gemini Vision
 python companion.py set-engine gemini

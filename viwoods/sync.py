@@ -451,6 +451,16 @@ class SyncEngine:
             total_synced += synced
             details[name] = synced
 
+        # The Daily app is a separate resource type with no folder tree, so
+        # it is never reached by the root-folder walk above. Only pull it
+        # for a true full sync, not one scoped to specific app_types.
+        if wanted is None:
+            if progress_cb:
+                progress_cb("Syncing Daily app...", 0.9)
+            daily_synced = self.sync_daily_app(force=force, progress_cb=progress_cb, dry_run=dry_run)
+            total_synced += daily_synced
+            details["Daily"] = daily_synced
+
         if not dry_run:
             self.state["last_full_sync"] = datetime.now().isoformat()
             self._save_state()
@@ -590,5 +600,155 @@ class SyncEngine:
             )
             if success:
                 synced += 1
+
+        return synced
+
+    @staticmethod
+    def _render_daily_todos(todos: List[Dict[str, Any]]) -> str:
+        """
+        Renders the Daily app's to-do items (type=2) as a checklist. `level`
+        100 is the app's own indent for a sub-item; anything at 0 is top-level.
+        """
+        lines = []
+        for t in sorted(todos, key=lambda x: (x.get("createdAt") or "", x.get("id") or 0)):
+            content = (t.get("content") or "").strip()
+            if not content:
+                continue
+            indent = "  " if (t.get("level") or 0) >= 100 else ""
+            checked = "x" if t.get("isFinish") else " "
+            lines.append(f"{indent}- [{checked}] {content}")
+        return "\n".join(lines)
+
+    def sync_daily_app(
+        self,
+        days_back: Optional[int] = None,
+        force: bool = False,
+        progress_cb: Optional[Callable[[str, float], None]] = None,
+        dry_run: bool = False
+    ) -> int:
+        """
+        Pulls entries from the Viwoods 'Daily' app: a separate resource type
+        (api/v1/resourceDailySync) from the folder-based Paper/Meeting/...
+        tree, so it is never reached by sync_folder(). Each date's page scan
+        (type=1) and to-dos (type=2) are injected into the matching daily
+        note under a fixed 'daily-app' sub-block, alongside whatever notebook
+        blocks are already there.
+        """
+        if days_back is None:
+            days_back = getattr(self.config, "daily_app_days_back", 30)
+
+        end = datetime.now()
+        start = end - timedelta(days=max(0, days_back))
+        start_str, end_str = start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+
+        if progress_cb:
+            progress_cb(f"Scanning Daily app entries ({start_str} to {end_str})...", 0.05)
+
+        try:
+            note_items = self.client.get_daily_list(start_str, end_str, app_type=1)
+        except Exception as e:
+            print(f"Error fetching Daily app pages: {e}")
+            note_items = []
+        try:
+            todo_items = self.client.get_daily_list(start_str, end_str, app_type=2)
+        except Exception as e:
+            print(f"Error fetching Daily app to-dos: {e}")
+            todo_items = []
+
+        by_date: Dict[str, Dict[str, list]] = {}
+        for it in note_items:
+            if it.get("isDelete") or not it.get("date"):
+                continue
+            by_date.setdefault(it["date"], {"notes": [], "todos": []})["notes"].append(it)
+        for it in todo_items:
+            if it.get("isDelete") or not it.get("date"):
+                continue
+            by_date.setdefault(it["date"], {"notes": [], "todos": []})["todos"].append(it)
+
+        synced = 0
+        for date_str, entries in sorted(by_date.items()):
+            cache_key = f"daily:{date_str}"
+            cached_mod = self.state["notes"].get(cache_key, {}).get("last_modified", 0)
+            latest_mod = max(
+                (it.get("lastModifiedTime") or 0 for it in entries["notes"] + entries["todos"]),
+                default=0
+            )
+
+            if not force and cached_mod and latest_mod and latest_mod <= cached_mod:
+                continue
+
+            if dry_run:
+                self.planned.append({
+                    "uuid": cache_key,
+                    "name": f"Daily app: {date_str}",
+                    "folder": "Daily",
+                    "app_type": "daily",
+                    "reason": "new" if not cached_mod else "modified",
+                })
+                if progress_cb:
+                    progress_cb(f"Would sync Daily app entry: {date_str}", 1.0)
+                continue
+
+            if progress_cb:
+                progress_cb(f"Syncing Daily app entry for {date_str}...", 0.5)
+
+            pages_data = []
+            for it in sorted(entries["notes"], key=lambda x: x.get("pageOrder") or 0):
+                img_url = it.get("url")
+                transcript = (it.get("content") or "").strip()
+                local_img_path = ""
+
+                if img_url:
+                    local_cache_img = LOCAL_CACHE_DIR / f"daily_{it.get('id')}.png"
+                    if not local_cache_img.exists() or force:
+                        try:
+                            self.client.download_file(img_url, str(local_cache_img))
+                        except Exception as e:
+                            print(f"Error downloading Daily app page for {date_str}: {e}")
+
+                    if local_cache_img.exists():
+                        dest_name = self.vault.attachment_filename(
+                            f"Daily {date_str}", str(it.get("id")), it.get("pageOrder") or 1
+                        )
+                        local_img_path = self.vault.save_attachment(str(local_cache_img), dest_name)
+                        if not transcript:
+                            transcript = self.ocr.transcribe(
+                                str(local_cache_img),
+                                context_prompt=f"Viwoods Daily app page for {date_str}",
+                                force=force
+                            )
+
+                pages_data.append({
+                    "pageNo": it.get("pageOrder") or 1,
+                    "local_image_path": local_img_path,
+                    "transcript": transcript
+                })
+
+            todo_block = self._render_daily_todos(entries["todos"])
+            if todo_block:
+                pages_data.append({"pageNo": "todo", "local_image_path": "", "transcript": todo_block})
+
+            if not pages_data:
+                continue
+
+            written = self.vault.sync_daily_journal(date_str, pages_data, note_uuid="daily-app")
+            if written is None:
+                # No daily note for this date and create_missing_daily_notes is off.
+                continue
+
+            self.state["notes"][cache_key] = {
+                "name": f"Daily app: {date_str}",
+                "app_type": "daily",
+                "last_modified": latest_mod,
+                "pages_count": len(pages_data),
+                "synced_at": datetime.now().isoformat()
+            }
+            self._dirty_notes.add(cache_key)
+            self._save_state()
+            self.ocr.flush_cache()
+            synced += 1
+
+            if progress_cb:
+                progress_cb(f"Finished Daily app entry: {date_str}", 1.0)
 
         return synced

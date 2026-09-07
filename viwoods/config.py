@@ -52,6 +52,7 @@ class Config(BaseModel):
     auto_sync_interval: int = 0  # 0 = disabled, >0 = minutes (serve mode)
     download_recordings: bool = True  # save meeting audio into the attachments folder
     max_pages_per_notebook: int = 50  # Cap on large imported PDF planners
+    daily_app_days_back: int = 30  # How far back to pull Daily app pages/to-dos
 
 
 def load_config() -> Config:

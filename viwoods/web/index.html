@@ -51,6 +51,13 @@
           </svg>
           Sync Journals
         </button>
+        <button id="btnSyncDaily" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 11l3 3L22 4"/>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          Sync Daily App
+        </button>
         <button id="btnSyncAll" class="btn btn-primary">
           <svg id="syncIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="23 4 23 10 17 10"/>
@@ -242,6 +249,12 @@
               <input type="number" id="cfgMaxPages" class="input-text" min="0" step="10" value="50">
               <small class="form-hint">Cap on large imported PDF planners. 0 means no cap.</small>
             </div>
+          </div>
+
+          <div class="form-group">
+            <label for="cfgDailyAppDaysBack">Daily App: Days Back</label>
+            <input type="number" id="cfgDailyAppDaysBack" class="input-text" min="0" step="5" value="30">
+            <small class="form-hint">How far back to pull pages and to-dos from the Viwoods Daily app (a separate cloud resource from your notebooks).</small>
           </div>
 
           <div class="form-check">

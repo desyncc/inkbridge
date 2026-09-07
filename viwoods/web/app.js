@@ -114,7 +114,8 @@ const SETTINGS_FIELDS = {
   cfgLMStudioUrl: { field: "lmstudio_url" },
   cfgLMStudioModel: { field: "lmstudio_model" },
   cfgInferTags: { field: "infer_tags", type: "checkbox" },
-  cfgMaxInferredTags: { field: "max_inferred_tags", type: "number" }
+  cfgMaxInferredTags: { field: "max_inferred_tags", type: "number" },
+  cfgDailyAppDaysBack: { field: "daily_app_days_back", type: "number" }
 };
 
 // Secrets are write-only: the server never sends them back, so an empty
@@ -441,6 +442,7 @@ async function loadJournals() {
 function bindEvents() {
   document.getElementById("btnSyncAll").addEventListener("click", () => startSync("all"));
   document.getElementById("btnSyncJournals").addEventListener("click", () => startSync("journals"));
+  document.getElementById("btnSyncDaily").addEventListener("click", () => startSync("daily"));
   document.getElementById("btnRefreshTree").addEventListener("click", () => loadTree());
 
   // Page Controls in Studio

@@ -131,6 +131,21 @@ def cmd_journals(days=14, force=False, engine=None):
     print(f"\nCompleted! {count} journal note(s) updated in vault.\n")
 
 
+def cmd_daily(days=None, force=False, engine=None):
+    cfg = load_config()
+    if engine:
+        cfg.ocr_engine = engine
+    eng = SyncEngine(cfg)
+    print(f"\n[Viwoods Companion] Syncing Viwoods Daily app entries...")
+    print(f"Using OCR engine: {cfg.ocr_engine}")
+
+    def on_progress(msg, pct):
+        print(f"[{int(pct * 100):3d}%] {msg}")
+
+    count = eng.sync_daily_app(days_back=days, force=force, progress_cb=on_progress)
+    print(f"\nCompleted! {count} Daily app entry/entries updated in vault.\n")
+
+
 def _open_browser_when_ready(host, port, url, timeout=20.0):
     """Waits for the port to accept connections, then opens the browser."""
     deadline = time.monotonic() + timeout
@@ -263,6 +278,12 @@ def main():
     p_journals.add_argument("--force", action="store_true", help="Force re-sync")
     p_journals.add_argument("--engine", choices=["windows", "ollama", "gemini", "lmstudio"], help="OCR engine to use")
 
+    # daily
+    p_daily = subparsers.add_parser("daily", help="Sync Viwoods Daily app pages and to-dos only")
+    p_daily.add_argument("--days", type=int, default=None, help="Days back to scan (default: config daily_app_days_back)")
+    p_daily.add_argument("--force", action="store_true", help="Force re-sync")
+    p_daily.add_argument("--engine", choices=["windows", "ollama", "gemini", "lmstudio"], help="OCR engine to use")
+
     # set-engine
     p_engine = subparsers.add_parser("set-engine", help="Change default OCR engine")
     p_engine.add_argument("engine", choices=["windows", "ollama", "gemini", "lmstudio"], help="OCR engine name")
@@ -286,6 +307,8 @@ def main():
         cmd_sync(force=args.force, engine=getattr(args, "engine", None), dry_run=args.dry_run)
     elif args.command == "journals":
         cmd_journals(days=args.days, force=args.force, engine=getattr(args, "engine", None))
+    elif args.command == "daily":
+        cmd_daily(days=args.days, force=args.force, engine=getattr(args, "engine", None))
     elif args.command == "set-engine":
         cmd_set_engine(args.engine, model=getattr(args, "model", None), url=getattr(args, "url", None))
     elif args.command == "status":

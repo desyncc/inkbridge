@@ -121,6 +121,7 @@ class ConfigUpdateRequest(BaseModel):
     max_pages_per_notebook: Optional[int] = None
     infer_tags: Optional[bool] = None
     max_inferred_tags: Optional[int] = None
+    daily_app_days_back: Optional[int] = None
 
 
 class LoginRequest(BaseModel):
@@ -130,7 +131,7 @@ class LoginRequest(BaseModel):
 
 
 class SyncRequest(BaseModel):
-    scope: str = "all"  # "all", "journals", "paper", or "folder" with resource_id
+    scope: str = "all"  # "all", "journals", "daily", "paper", or "folder" with resource_id
     force: bool = False
     resource_id: Optional[str] = ""
     app_type: int = 1
@@ -399,6 +400,9 @@ def run_sync_task(scope: str, force: bool, resource_id: str = "", app_type: int 
         if scope == "journals":
             count = engine.sync_recent_journals(force=force, progress_cb=on_progress)
             result = {"scope": "journals", "synced": count}
+        elif scope == "daily":
+            count = engine.sync_daily_app(force=force, progress_cb=on_progress)
+            result = {"scope": "daily", "synced": count}
         elif resource_id:
             count = engine.sync_resource(
                 app_type=app_type, resource_id=resource_id,

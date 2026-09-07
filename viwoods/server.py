@@ -119,6 +119,8 @@ class ConfigUpdateRequest(BaseModel):
     auto_sync_interval: Optional[int] = None
     download_recordings: Optional[bool] = None
     max_pages_per_notebook: Optional[int] = None
+    infer_tags: Optional[bool] = None
+    max_inferred_tags: Optional[int] = None
 
 
 class LoginRequest(BaseModel):

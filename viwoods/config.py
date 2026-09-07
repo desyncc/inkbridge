@@ -42,6 +42,12 @@ class Config(BaseModel):
     ollama_model: str = "qwen3.5:9b"
     ollama_think: bool = False
 
+    # Auto-tagging: asks the active OCR engine's model to suggest Obsidian
+    # tags from a notebook's transcribed text. Off by default since it adds
+    # an extra model call per notebook.
+    infer_tags: bool = False
+    max_inferred_tags: int = 6
+
     # Sync Preferences
     auto_sync_interval: int = 0  # 0 = disabled, >0 = minutes (serve mode)
     download_recordings: bool = True  # save meeting audio into the attachments folder

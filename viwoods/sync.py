@@ -214,6 +214,15 @@ class SyncEngine:
         metadata["total_pages_available"] = total_pages
         metadata["page_cap"] = max_allowed
 
+        if getattr(self.config, "infer_tags", False):
+            combined_text = "\n\n".join(
+                p["transcript"] for p in pages_data if p.get("transcript")
+            )
+            if combined_text.strip():
+                if progress_cb:
+                    progress_cb(f"Inferring tags for '{note_name}'...", 0.92)
+                metadata["inferred_tags"] = self.ocr.infer_tags(combined_text, force=force)
+
         # 1. Mirror into Obsidian Viwoods/ directory
         self.vault.mirror_notebook(
             rel_folder_path=rel_folder_path,

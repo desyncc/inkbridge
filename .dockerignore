@@ -1,0 +1,16 @@
+.git
+.venv
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+exports/
+FIXES.md
+README.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+.viwoods_config.json
+.viwoods_ocr_cache.json
+.viwoods_sync_state.json
+.viwoods_cache/

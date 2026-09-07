@@ -1,0 +1,22 @@
+services:
+  viwoods:
+    build: .
+    image: viwoods-companion
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      # Config, sync state, OCR cache, downloaded page scans - persists
+      # across container recreation. Contains your Viwoods token.
+      - viwoods-data:/data
+      # Your Obsidian vault. Change the left-hand side to its real path on
+      # the host, then set vault_path to /vault in the dashboard's Settings
+      # tab (or in the config.json inside the viwoods-data volume).
+      - /path/to/your/obsidian/vault:/vault
+    extra_hosts:
+      # Lets ollama_url use http://host.docker.internal:11434 to reach an
+      # Ollama instance running on the Debian host itself.
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  viwoods-data:

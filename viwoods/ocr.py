@@ -4,7 +4,7 @@ import os
 import re
 import subprocess
 import sys
-from typing import Optional
+from typing import List, Optional
 import httpx
 
 from .config import Config
@@ -12,6 +12,7 @@ from .jsonstore import read_json, update_json
 from .paths import data_path
 
 CACHE_FILE = data_path("ocr_cache.json")
+TAG_CACHE_FILE = data_path("tag_cache.json")
 
 # Transcripts held in memory before the cache file is rewritten. A notebook is
 # flushed as soon as it finishes, so at most this many can be lost on a crash.
@@ -29,6 +30,7 @@ class OCREngine:
         # Keys transcribed by this process, merged into the file on each save.
         self._pending: set = set()
         self._warned: set = set()
+        self.tag_cache = read_json(TAG_CACHE_FILE, {})
 
     def _warn_once(self, key: str, message: str) -> None:
         """Prints a configuration error once per process, not once per page."""
@@ -167,6 +169,136 @@ class OCREngine:
             self._save_cache()
 
         return result
+
+    def tag_cache_key(self, text: str) -> str:
+        """Cache key for a tag suggestion, scoped to the current engine and model."""
+        engine = (self.config.ocr_engine or "").lower()
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        return f"{engine}:{self._active_model(engine)}:{digest}"
+
+    @staticmethod
+    def _sanitize_tag(raw: str) -> str:
+        """Obsidian tags: no spaces or leading '#', so normalize to kebab-case."""
+        tag = raw.strip().lstrip("#").strip().lower()
+        tag = re.sub(r"[\s_]+", "-", tag)
+        tag = re.sub(r"[^a-z0-9/\-]", "", tag)
+        return tag.strip("-/")
+
+    def _parse_tags(self, raw: str, max_tags: int) -> List[str]:
+        """Turns a model's comma/newline-separated reply into clean, deduped tags."""
+        raw = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.DOTALL)
+        candidates = re.split(r"[,\n]+", raw)
+        tags: List[str] = []
+        seen = set()
+        for candidate in candidates:
+            tag = self._sanitize_tag(candidate)
+            if tag and tag not in seen:
+                seen.add(tag)
+                tags.append(tag)
+            if len(tags) >= max_tags:
+                break
+        return tags
+
+    def infer_tags(self, text: str, force: bool = False) -> List[str]:
+        """
+        Asks the active engine's model to suggest Obsidian tags for a
+        notebook's combined transcript. Results are cached per engine, model
+        and text content, like transcripts are.
+        """
+        text = (text or "").strip()
+        if not text:
+            return []
+
+        engine = (self.config.ocr_engine or "").lower()
+        key = self.tag_cache_key(text)
+        if not force and key in self.tag_cache:
+            return self.tag_cache[key]
+
+        max_tags = max(1, getattr(self.config, "max_inferred_tags", 6))
+        prompt = (
+            f"Suggest up to {max_tags} short topical tags for organizing the note below in "
+            "Obsidian. Base them only on concrete topics, projects, people or themes actually "
+            "present in the text. Rules: lowercase, hyphens instead of spaces, no punctuation, "
+            "no leading '#', no generic words like 'note', 'journal' or 'notebook'. "
+            "Reply with ONLY the tags, comma-separated, nothing else.\n\n---\n" + text[:6000]
+        )
+
+        try:
+            if engine == "ollama":
+                raw = self._chat_ollama(prompt)
+            elif engine == "lmstudio":
+                raw = self._chat_lmstudio(prompt)
+            elif engine == "gemini":
+                if not (self.config.gemini_api_key or "").strip():
+                    return []
+                raw = self._chat_gemini(prompt)
+            else:
+                return []
+        except Exception as e:
+            print(f"Warning: Tag inference failed ({e}).")
+            return []
+
+        tags = [f"self/{tag}" for tag in self._parse_tags(raw, max_tags)]
+
+        def mutate(disk_cache: dict) -> None:
+            disk_cache[key] = tags
+
+        try:
+            self.tag_cache = update_json(TAG_CACHE_FILE, mutate, {})
+        except Exception as e:
+            print(f"Warning: Failed to save tag cache: {e}")
+
+        return tags
+
+    def _chat_ollama(self, prompt: str) -> str:
+        """Text-only Ollama chat call, used for tag inference."""
+        url = f"{self.config.ollama_url.rstrip('/')}/api/chat"
+        payload = {
+            "model": self.config.ollama_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "think": getattr(self.config, "ollama_think", False),
+            "options": {"temperature": 0.2}
+        }
+        with httpx.Client(timeout=120.0) as client:
+            resp = client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("message", {}).get("content", "").strip()
+
+    def _chat_lmstudio(self, prompt: str) -> str:
+        """Text-only OpenAI-compatible chat call, used for tag inference."""
+        url = f"{self.config.lmstudio_url.rstrip('/')}/chat/completions"
+        payload = {
+            "model": self.config.lmstudio_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2
+        }
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            choices = data.get("choices", [])
+            if choices:
+                return choices[0].get("message", {}).get("content", "").strip()
+        return ""
+
+    def _chat_gemini(self, prompt: str) -> str:
+        """Text-only Gemini call, used for tag inference."""
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.config.gemini_model}:generateContent?key={self.config.gemini_api_key}"
+        )
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                return "".join(p.get("text", "") for p in parts).strip()
+        return ""
 
     def _transcribe_windows(self, image_path: str) -> str:
         """Invokes Windows built-in WinRT OCR engine via PowerShell."""

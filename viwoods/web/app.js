@@ -112,7 +112,9 @@ const SETTINGS_FIELDS = {
   cfgOllamaUrl: { field: "ollama_url" },
   cfgOllamaModel: { field: "ollama_model" },
   cfgLMStudioUrl: { field: "lmstudio_url" },
-  cfgLMStudioModel: { field: "lmstudio_model" }
+  cfgLMStudioModel: { field: "lmstudio_model" },
+  cfgInferTags: { field: "infer_tags", type: "checkbox" },
+  cfgMaxInferredTags: { field: "max_inferred_tags", type: "number" }
 };
 
 // Secrets are write-only: the server never sends them back, so an empty

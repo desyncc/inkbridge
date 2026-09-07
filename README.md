@@ -21,6 +21,7 @@ It mirrors your tablet's folder hierarchy, downloads high-resolution ink scans, 
   - **Local LM Studio**: any OpenAI-compatible vision endpoint.
   - **Windows Native OCR**: 100% offline via `Windows.Media.Ocr`. **Windows only** — on Linux/macOS the app reports it and transcribes nothing, so pick another engine there.
   - **Content-Addressable Cache**: keyed `engine:model:sha256`, so a page is transcribed once per model and switching models re-transcribes rather than serving a stale result.
+- **🏷️ Optional Auto-Tagging**: set `infer_tags` to have the active engine's model read a notebook's combined transcript and suggest Obsidian tags for its frontmatter (`max_inferred_tags` caps how many). Cached the same way transcripts are, so it costs one text call per notebook, not per sync.
 - **🌐 Modern Web Dashboard** (loopback only, `127.0.0.1`):
   - Browse your cloud folders and notebooks interactively.
   - Side-by-side split view comparing high-res handwritten ink with the extracted markdown transcript.
@@ -92,6 +93,9 @@ default:
   "ollama_model": "qwen3.5:9b",
   "ollama_think": false,
 
+  "infer_tags": false,
+  "max_inferred_tags": 6,
+
   "auto_sync_interval": 0,
   "download_recordings": true,
   "max_pages_per_notebook": 50
@@ -116,6 +120,8 @@ default:
 | `lmstudio_url`, `lmstudio_model` | OpenAI-compatible vision endpoint and model. |
 | `ollama_url`, `ollama_model` | Ollama endpoint and vision model. |
 | `ollama_think` | Pass `think` to Ollama for reasoning models. |
+| `infer_tags` | Ask the active OCR engine's model to suggest Obsidian tags from a notebook's transcribed text, added to that note's `tags:` frontmatter alongside `viwoods`/`notebook`. One extra text-only call per notebook (skipped if there's no transcript); results are cached per engine/model/content like transcripts are, and cleared by `--force`. Daily journal notes are never touched — only the mirrored notebook file's own frontmatter. |
+| `max_inferred_tags` | Cap on how many tags `infer_tags` adds per notebook. |
 | `auto_sync_interval` | Minutes between automatic syncs while `serve` is running. `0` disables. |
 | `download_recordings` | Save meeting audio into the attachments folder and link it. |
 | `max_pages_per_notebook` | Cap on pages per notebook (large imported PDF planners). `0` means no cap; when pages are dropped the mirrored note says so. |
@@ -192,6 +198,65 @@ python companion.py export 0d7e25d2-4f39-4122-affa-ea02704a5637 --format zip
 python companion.py daemon --interval 30
 ```
 Checks for new or modified notebooks every 30 minutes. A failed sync is logged and retried with exponential backoff instead of killing the daemon.
+
+---
+
+## 🐳 Running in Docker
+
+For a headless Debian server, a `Dockerfile` and `docker-compose.yml` are
+included alongside the native setup above — nothing about running
+`companion.py` directly (e.g. on your desktop) changes.
+
+### 1. Edit `docker-compose.yml`
+
+Point the vault volume at your real Obsidian vault path on the host:
+
+```yaml
+volumes:
+  - /path/to/your/obsidian/vault:/vault
+```
+
+### 2. Build and start
+
+```bash
+docker compose up -d --build
+```
+
+The dashboard is now at `http://<your-server-ip>:8765`. Unlike the native
+`serve` command (loopback-only by design), the container binds `0.0.0.0`
+internally so the port mapping works — treat that address as trusted
+network only, since the dashboard holds your Viwoods token and Gemini key.
+
+### 3. Configure
+
+Open the dashboard's Settings tab and set:
+- `vault_path` to `/vault` (the mount point from the compose file)
+- `ollama_url` to `http://host.docker.internal:11434` if Ollama runs on the
+  Debian host itself (the compose file already maps that hostname)
+
+Config, sync state, the OCR cache and downloaded page scans live in the
+`viwoods-data` named volume (`VIWOODS_DATA_DIR=/data` inside the container),
+so they survive `docker compose down` / rebuilds.
+
+### Running the daemon instead of the dashboard
+
+```bash
+docker compose run --rm viwoods python companion.py daemon --interval 30
+```
+
+or override `command:` in `docker-compose.yml` to run the daemon as the
+long-lived service instead of the web dashboard.
+
+### CLI commands (export, sync, status, ...)
+
+```bash
+docker compose exec viwoods python companion.py status
+docker compose exec viwoods python companion.py export "Morning Pages" --format pdf
+```
+
+Exported files land in `/app/exports` inside the container; mount a volume
+there too if you want them on the host, e.g. add
+`- ./exports:/app/exports` under `volumes:`.
 
 ---
 

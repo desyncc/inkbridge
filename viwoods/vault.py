@@ -197,6 +197,9 @@ class ObsidianVault:
         page_cap = metadata.get("page_cap") or 0
         pages_dropped = max(0, int(total_available) - len(pages_data))
 
+        base_tags = ["viwoods", "notebook"]
+        inferred_tags = [t for t in (metadata.get("inferred_tags") or []) if t not in base_tags]
+
         # Build Markdown content
         frontmatter = [
             "---",
@@ -204,8 +207,7 @@ class ObsidianVault:
             f"created: \"{created_str}\"",
             f"updated: \"{updated_str}\"",
             "tags:",
-            "  - viwoods",
-            "  - notebook",
+            *(f"  - {tag}" for tag in base_tags + inferred_tags),
             f"device: \"{self.config.machine_model}\"",
             f"resource_id: \"{uuid}\"",
             f"total_pages: {len(pages_data)}",

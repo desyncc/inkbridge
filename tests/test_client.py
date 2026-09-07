@@ -7,9 +7,9 @@ import httpx
 import pytest
 
 from viwoods.client import AuthError, ViwoodsClient, sign_data
-from viwoods.config import Config
+from viwoods.config import REQUEST_SIGNING_SALT, Config
 
-SECRET = "O9EfpIx4g9o8TKuCv2n5msBHucSrAf"
+SECRET = REQUEST_SIGNING_SALT
 
 
 def md5(text: str) -> str:

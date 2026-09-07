@@ -8,7 +8,7 @@ It mirrors your tablet's folder hierarchy, downloads high-resolution ink scans, 
 
 ## ✨ Features
 
-- **📂 1:1 Directory Mirroring**: Preserves your tablet's exact folder tree (`Paper`, `Journals`, `Meeting`, `Knowledge Base`, etc.) inside your vault under `Viwoods/`.
+- **📂 1:1 Directory Mirroring**: Preserves your tablet's exact folder tree (`Paper`, `Journals`, `Meeting`, `Knowledge Base`, etc.) inside your vault under `99 - Viwoods/`.
 - **✍️ Marker-Delimited Daily Journal Sync**: Detects dated notebooks (e.g. `2026-09-02`) or items in your `Journals` folder and updates your daily note in `10 - Journals/<Month>/YYYY-MM-DD.md`.
   - Targets the heading configured as `daily_heading` (default `# Transcribed text from AiPaper:`), matched on an exact line.
   - Writes only between `<!-- viwoods:start -->` and `<!-- viwoods:end -->`. Everything outside those markers — `## 🌅 Landing`, `## 🗓️ Timeline`, `## ✅ Check-ins`, anything else — is left untouched.
@@ -78,8 +78,8 @@ default:
   "secret_key": "O9EfpIx4g9o8TKuCv2n5msBHucSrAf",
 
   "vault_path": "C:\\Users\\You\\Obsidian",
-  "vault_mirror_folder": "Viwoods",
-  "vault_attachments_folder": "Viwoods/Attachments",
+  "vault_mirror_folder": "99 - Viwoods",
+  "vault_attachments_folder": "99 - Viwoods/Attachments",
   "daily_folder": "10 - Journals",
   "daily_heading": "# Transcribed text from AiPaper:",
   "create_missing_daily_notes": true,
@@ -174,7 +174,7 @@ Finds your `Journals` folder in Paper and updates the matching daily notes in `1
 ```bash
 python companion.py sync
 ```
-Recursively mirrors all cloud categories (`Paper`, `Meeting`, `Learning`, `Knowledge Base`, `Memo`) into `Viwoods/` in your Obsidian vault. Use `--force` to re-download and re-transcribe existing notes.
+Recursively mirrors all cloud categories (`Paper`, `Meeting`, `Learning`, `Knowledge Base`, `Memo`) into `99 - Viwoods/` in your Obsidian vault. Use `--force` to re-download and re-transcribe existing notes.
 
 ```bash
 python companion.py sync --dry-run
@@ -274,13 +274,13 @@ When synced, your Obsidian vault receives:
 │           ├── # Transcribed text from AiPaper:
 │           │   ├── <!-- viwoods:start -->          <-- INJECTED BLOCK
 │           │   ├──   <!-- viwoods:note 0d7e25d2… -->
-│           │   ├──   ![[Viwoods/Attachments/2026-09-02_0d7e25d2_p1.png]]
+│           │   ├──   ![[99 - Viwoods/Attachments/2026-09-02_0d7e25d2_p1.png]]
 │           │   ├──   > NERV GOD'S IN HIS HEAVEN...
 │           │   ├──   <!-- viwoods:note-end 0d7e25d2… -->
 │           │   └── <!-- viwoods:end -->
 │           └── ## ✅ Check-ins                      <-- never touched
 │
-└── Viwoods/                                        <-- 1:1 CLOUD MIRROR
+└── 99 - Viwoods/                                        <-- 1:1 CLOUD MIRROR
     ├── Attachments/                                <-- page PNGs & recordings
     │   └── 2026-09-02_0d7e25d2_p1.png
     ├── Paper/

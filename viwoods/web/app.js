@@ -405,7 +405,7 @@ async function loadJournals() {
       return;
     }
 
-    const mirrorRoot = savedConfig.vault_mirror_folder || "Viwoods";
+    const mirrorRoot = savedConfig.vault_mirror_folder || "99 - Viwoods";
     const dailyFolder = savedConfig.daily_folder || "10 - Journals";
     const folderName = escapeHtml(data.folder.name || "Journals");
 

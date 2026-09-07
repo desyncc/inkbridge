@@ -24,8 +24,8 @@ class Config(BaseModel):
 
     # Obsidian Vault Settings
     vault_path: str = r"C:\Users\You\Obsidian"
-    vault_mirror_folder: str = "Viwoods"
-    vault_attachments_folder: str = "Viwoods/Attachments"
+    vault_mirror_folder: str = "99 - Viwoods"
+    vault_attachments_folder: str = "99 - Viwoods/Attachments"
     daily_folder: str = "10 - Journals"
     daily_heading: str = "# Transcribed text from AiPaper:"
     # False leaves a missing daily note alone, so Obsidian's own daily-note

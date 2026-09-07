@@ -6,6 +6,11 @@ from .paths import data_path
 
 CONFIG_PATH = data_path("config.json")
 
+# Salt the official Viwoods app mixes into every request's MD5 signature
+# (see client.sign_data). It's baked into that app for all users, not an
+# account secret, so shipping it here doesn't expose anything of yours.
+REQUEST_SIGNING_SALT = "O9EfpIx4g9o8TKuCv2n5msBHucSrAf"
+
 NO_TOKEN_MESSAGE = (
     "No Viwoods token configured. Paste your Access-Token from cloud.viwoods.com "
     "into the Settings tab of the web dashboard, or add it to "
@@ -20,7 +25,10 @@ class Config(BaseModel):
     machine_model: str = "web"
     device_name: str = "AiPaper"
     api_base_url: str = "https://api.viwoods.com"
-    secret_key: str = "O9EfpIx4g9o8TKuCv2n5msBHucSrAf"
+    # Fixed salt the official app uses to sign every request (see
+    # REQUEST_SIGNING_SALT below); not a per-user secret, so this default is
+    # correct for everyone and never needs to change.
+    secret_key: str = REQUEST_SIGNING_SALT
 
     # Obsidian Vault Settings
     vault_path: str = r"C:\Users\You\Obsidian"

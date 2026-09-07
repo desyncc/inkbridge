@@ -77,7 +77,7 @@ default:
   "machine_model": "web",
   "device_name": "AiPaper",
   "api_base_url": "https://api.viwoods.com",
-  "secret_key": "O9EfpIx4g9o8TKuCv2n5msBHucSrAf",
+  "secret_key": "<filled in automatically, see below>",
 
   "vault_path": "C:\\Users\\You\\Obsidian",
   "vault_mirror_folder": "99 - Viwoods",
@@ -111,7 +111,7 @@ default:
 | `machine_number` | Device serial. Filled in automatically from your first registered device. |
 | `machine_model`, `device_name` | Identify this client to the API; leave as-is. |
 | `api_base_url` | Viwoods Cloud API root. |
-| `secret_key` | Salt for the API's MD5 request signature. |
+| `secret_key` | Salt for the API's MD5 request signature. Fixed and built into the client — same for every user, nothing to fill in. |
 | `vault_path` | Absolute path to your Obsidian vault. |
 | `vault_mirror_folder` | Folder in the vault holding the 1:1 cloud mirror. |
 | `vault_attachments_folder` | Where page PNGs and recordings are written. |

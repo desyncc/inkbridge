@@ -693,6 +693,10 @@ class SyncEngine:
                 progress_cb(f"Syncing Daily app entry for {date_str}...", 0.5)
 
             pages_data = []
+            todo_block = self._render_daily_todos(entries["todos"])
+            if todo_block:
+                pages_data.append({"pageNo": "todo", "local_image_path": "", "transcript": todo_block})
+
             for it in sorted(entries["notes"], key=lambda x: x.get("pageOrder") or 0):
                 img_url = it.get("url")
                 transcript = (it.get("content") or "").strip()
@@ -723,10 +727,6 @@ class SyncEngine:
                     "local_image_path": local_img_path,
                     "transcript": transcript
                 })
-
-            todo_block = self._render_daily_todos(entries["todos"])
-            if todo_block:
-                pages_data.append({"pageNo": "todo", "local_image_path": "", "transcript": todo_block})
 
             if not pages_data:
                 continue

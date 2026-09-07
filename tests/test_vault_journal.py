@@ -40,7 +40,7 @@ def test_injects_between_markers(vault):
     out = vault.inject_journal_section("", HEADING, "uuid-a", "hello")
 
     assert VIWOODS_START in out and VIWOODS_END in out
-    assert "<!-- viwoods:note uuid-a -->" in out
+    assert "%% viwoods:note uuid-a %%" in out
     assert out.index(VIWOODS_START) < out.index("hello") < out.index(VIWOODS_END)
 
 

@@ -8,18 +8,37 @@ from typing import Any, Dict, List, Optional
 from .config import Config
 
 # Delimiters for the block Viwoods owns inside a daily note. Everything
-# outside START/END is the user's and is never touched.
-VIWOODS_START = "<!-- viwoods:start -->"
-VIWOODS_END = "<!-- viwoods:end -->"
+# outside START/END is the user's and is never touched. Obsidian's native
+# %% %% comment syntax is used (not <!-- -->) so the markers stay hidden in
+# Live Preview, not just Reading view.
+VIWOODS_START = "%% viwoods:start %%"
+VIWOODS_END = "%% viwoods:end %%"
 
 # A daily note can be fed by more than one notebook, so each notebook gets
 # its own sub-block keyed by uuid and is updated independently.
 def _note_start_marker(uuid: str) -> str:
-    return f"<!-- viwoods:note {uuid} -->"
+    return f"%% viwoods:note {uuid} %%"
 
 
 def _note_end_marker(uuid: str) -> str:
-    return f"<!-- viwoods:note-end {uuid} -->"
+    return f"%% viwoods:note-end {uuid} %%"
+
+
+# Notes written before markers switched from HTML comments to %% %% still
+# carry the old form. Upgrade them in place on the next sync so they don't
+# linger as visible clutter or grow an orphaned duplicate block.
+_LEGACY_MARKER_PATTERNS = [
+    (re.compile(r"<!--\s*viwoods:note-end\s+(\S+?)\s*-->"), lambda m: _note_end_marker(m.group(1))),
+    (re.compile(r"<!--\s*viwoods:note\s+(\S+?)\s*-->"), lambda m: _note_start_marker(m.group(1))),
+    (re.compile(r"<!--\s*viwoods:start\s*-->"), lambda m: VIWOODS_START),
+    (re.compile(r"<!--\s*viwoods:end\s*-->"), lambda m: VIWOODS_END),
+]
+
+
+def _normalize_legacy_markers(content: str) -> str:
+    for pattern, replace in _LEGACY_MARKER_PATTERNS:
+        content = pattern.sub(replace, content)
+    return content
 
 
 def _note_block(uuid: str, body: str) -> str:
@@ -294,6 +313,7 @@ class ObsidianVault:
         <!-- viwoods:start --> / <!-- viwoods:end --> markers, touching nothing
         outside them. Only the sub-block belonging to `uuid` is rewritten.
         """
+        content = _normalize_legacy_markers(content)
         heading = heading.strip()
         match = re.search(rf"^{re.escape(heading)}[ \t]*$", content, re.MULTILINE)
 

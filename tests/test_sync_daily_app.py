@@ -83,7 +83,7 @@ def test_syncs_a_page_and_todos_into_the_daily_note(config, vault):
     assert ocr.calls == 1
     text = note_path(vault, date_str).read_text(encoding="utf-8")
     assert VIWOODS_START in text
-    assert "<!-- viwoods:note daily-app -->" in text
+    assert "%% viwoods:note daily-app %%" in text
     assert "ocr text" in text
     assert "- [ ] Buy milk" in text
     assert "  - [x] Sub item" in text

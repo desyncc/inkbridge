@@ -11,8 +11,9 @@ It mirrors your tablet's folder hierarchy, downloads high-resolution ink scans, 
 - **📂 1:1 Directory Mirroring**: Preserves your tablet's exact folder tree (`Paper`, `Journals`, `Meeting`, `Knowledge Base`, etc.) inside your vault under `99 - Viwoods/`.
 - **✍️ Marker-Delimited Daily Journal Sync**: Detects dated notebooks (e.g. `2026-09-02`) or items in your `Journals` folder and updates your daily note at `<daily_folder>/<Month>/YYYY-MM-DD.md`.
   - Targets the heading configured as `daily_heading` (default `# Transcribed text from AiPaper:`), matched on an exact line.
-  - Writes only between `<!-- viwoods:start -->` and `<!-- viwoods:end -->`. Everything outside those markers — `## 🌅 Landing`, `## 🗓️ Timeline`, `## ✅ Check-ins`, anything else — is left untouched.
-  - Each notebook gets its own `<!-- viwoods:note <uuid> -->` sub-block, so several notebooks can feed the same date and each is updated independently.
+  - Writes only between `%% viwoods:start %%` and `%% viwoods:end %%`. Everything outside those markers — `## 🌅 Landing`, `## 🗓️ Timeline`, `## ✅ Check-ins`, anything else — is left untouched.
+  - Each notebook gets its own `%% viwoods:note <uuid> %%` sub-block, so several notebooks can feed the same date and each is updated independently.
+  - Markers use Obsidian's native `%% %%` comment syntax, so they stay hidden in Live Preview, not just Reading view. Notes written before this change carry old `<!-- -->` markers, which are upgraded in place the next time that note is synced.
   - A note that has the heading but no markers (written by an older version) is migrated on the next sync: the markers are inserted after the heading and the block ends at the next heading of any level or the next `---`.
   - Includes both high-resolution page image embeds and transcribed text.
 - **☑️ Viwoods Daily App Sync**: pulls the tablet's separate **Daily** app (its own cloud resource, not part of the Paper/Meeting/... folder tree) — each date's page scan and to-dos land in a `daily-app` sub-block in the same daily note, right alongside any notebook-driven journal content. `daily_app_days_back` controls how far back it looks; runs as part of a full sync or on its own via `companion.py daily` / **Sync Daily App** in the dashboard.
@@ -285,12 +286,12 @@ When synced, your Obsidian vault receives:
 │           ├── ## 🌅 Landing
 │           ├── ## 🗓️ Timeline
 │           ├── # Transcribed text from AiPaper:
-│           │   ├── <!-- viwoods:start -->          <-- INJECTED BLOCK
-│           │   ├──   <!-- viwoods:note 0d7e25d2… -->
+│           │   ├── %% viwoods:start %%              <-- INJECTED BLOCK
+│           │   ├──   %% viwoods:note 0d7e25d2… %%
 │           │   ├──   ![[99 - Viwoods/Attachments/2026-09-02_0d7e25d2_p1.png]]
 │           │   ├──   > NERV GOD'S IN HIS HEAVEN...
-│           │   ├──   <!-- viwoods:note-end 0d7e25d2… -->
-│           │   └── <!-- viwoods:end -->
+│           │   ├──   %% viwoods:note-end 0d7e25d2… %%
+│           │   └── %% viwoods:end %%
 │           └── ## ✅ Check-ins                      <-- never touched
 │
 └── 99 - Viwoods/                                        <-- 1:1 CLOUD MIRROR

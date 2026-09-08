@@ -111,6 +111,7 @@ const SETTINGS_FIELDS = {
   cfgOcrEngine: { field: "ocr_engine" },
   cfgOllamaUrl: { field: "ollama_url" },
   cfgOllamaModel: { field: "ollama_model" },
+  cfgOllamaThink: { field: "ollama_think", type: "checkbox" },
   cfgLMStudioUrl: { field: "lmstudio_url" },
   cfgLMStudioModel: { field: "lmstudio_model" },
   cfgInferTags: { field: "infer_tags", type: "checkbox" },

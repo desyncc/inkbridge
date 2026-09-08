@@ -64,7 +64,7 @@ def cmd_status():
     print("=" * 55)
 
 
-def cmd_set_engine(engine: str, model: str = None, url: str = None):
+def cmd_set_engine(engine: str, model: str = None, url: str = None, think: bool = None):
     cfg = load_config()
     cfg.ocr_engine = engine.lower()
     if model:
@@ -79,11 +79,14 @@ def cmd_set_engine(engine: str, model: str = None, url: str = None):
             cfg.ollama_url = url
         elif cfg.ocr_engine == "lmstudio":
             cfg.lmstudio_url = url
+    if think is not None and cfg.ocr_engine == "ollama":
+        cfg.ollama_think = think
     save_config(cfg)
     print(f"OCR engine updated to: {cfg.ocr_engine}")
     if cfg.ocr_engine == "ollama":
-        print(f"  Model: {cfg.ollama_model}")
-        print(f"  URL:   {cfg.ollama_url}")
+        print(f"  Model:    {cfg.ollama_model}")
+        print(f"  URL:      {cfg.ollama_url}")
+        print(f"  Thinking: {cfg.ollama_think}")
 
 
 def cmd_sync(force=False, engine=None, dry_run=False):
@@ -289,6 +292,9 @@ def main():
     p_engine.add_argument("engine", choices=["windows", "ollama", "gemini", "lmstudio"], help="OCR engine name")
     p_engine.add_argument("--model", type=str, help="Model name (e.g. qwen3.5:9b)")
     p_engine.add_argument("--url", type=str, help="API URL (e.g. http://localhost:11434)")
+    think_group = p_engine.add_mutually_exclusive_group()
+    think_group.add_argument("--think", dest="think", action="store_true", default=None, help="Enable Ollama model thinking (ollama engine only)")
+    think_group.add_argument("--no-think", dest="think", action="store_false", help="Disable Ollama model thinking")
 
     # status
     subparsers.add_parser("status", help="Print current status and connection info")
@@ -310,7 +316,7 @@ def main():
     elif args.command == "daily":
         cmd_daily(days=args.days, force=args.force, engine=getattr(args, "engine", None))
     elif args.command == "set-engine":
-        cmd_set_engine(args.engine, model=getattr(args, "model", None), url=getattr(args, "url", None))
+        cmd_set_engine(args.engine, model=getattr(args, "model", None), url=getattr(args, "url", None), think=getattr(args, "think", None))
     elif args.command == "status":
         cmd_status()
     elif args.command == "daemon":

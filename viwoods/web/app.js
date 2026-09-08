@@ -111,10 +111,13 @@ const SETTINGS_FIELDS = {
   cfgOcrEngine: { field: "ocr_engine" },
   cfgOllamaUrl: { field: "ollama_url" },
   cfgOllamaModel: { field: "ollama_model" },
+  cfgOllamaThink: { field: "ollama_think", type: "checkbox" },
   cfgLMStudioUrl: { field: "lmstudio_url" },
   cfgLMStudioModel: { field: "lmstudio_model" },
   cfgInferTags: { field: "infer_tags", type: "checkbox" },
   cfgMaxInferredTags: { field: "max_inferred_tags", type: "number" },
+  cfgInferTasks: { field: "infer_tasks", type: "checkbox" },
+  cfgMaxInferredTasks: { field: "max_inferred_tasks", type: "number" },
   cfgDailyAppDaysBack: { field: "daily_app_days_back", type: "number" }
 };
 

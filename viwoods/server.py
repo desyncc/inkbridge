@@ -115,12 +115,15 @@ class ConfigUpdateRequest(BaseModel):
     lmstudio_model: Optional[str] = None
     ollama_url: Optional[str] = None
     ollama_model: Optional[str] = None
+    ollama_think: Optional[bool] = None
     token: Optional[str] = None
     auto_sync_interval: Optional[int] = None
     download_recordings: Optional[bool] = None
     max_pages_per_notebook: Optional[int] = None
     infer_tags: Optional[bool] = None
     max_inferred_tags: Optional[int] = None
+    infer_tasks: Optional[bool] = None
+    max_inferred_tasks: Optional[int] = None
     daily_app_days_back: Optional[int] = None
 
 

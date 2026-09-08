@@ -223,6 +223,15 @@ class SyncEngine:
                     progress_cb(f"Inferring tags for '{note_name}'...", 0.92)
                 metadata["inferred_tags"] = self.ocr.infer_tags(combined_text, force=force)
 
+        if getattr(self.config, "infer_tasks", False):
+            combined_text = "\n\n".join(
+                p["transcript"] for p in pages_data if p.get("transcript")
+            )
+            if combined_text.strip():
+                if progress_cb:
+                    progress_cb(f"Inferring tasks for '{note_name}'...", 0.93)
+                metadata["inferred_tasks"] = self.ocr.infer_tasks(combined_text, force=force)
+
         # 1. Mirror into Obsidian Viwoods/ directory
         self.vault.mirror_notebook(
             rel_folder_path=rel_folder_path,
@@ -250,7 +259,8 @@ class SyncEngine:
                 if progress_cb:
                     progress_cb(f"Injecting into daily journal for {target_date}...", 0.95)
                 self.vault.sync_daily_journal(
-                    target_date, pages_data, raw_meta=detail, note_uuid=uuid
+                    target_date, pages_data, raw_meta=detail, note_uuid=uuid,
+                    inferred_tasks=metadata.get("inferred_tasks")
                 )
 
         # Update state
@@ -731,7 +741,22 @@ class SyncEngine:
             if not pages_data:
                 continue
 
-            written = self.vault.sync_daily_journal(date_str, pages_data, note_uuid="daily-app")
+            inferred_tasks = None
+            if getattr(self.config, "infer_tasks", False):
+                # The "todo" pseudo-page is already the app's own structured
+                # to-do list, so only mine the handwritten note pages here.
+                combined_text = "\n\n".join(
+                    p["transcript"] for p in pages_data
+                    if p.get("transcript") and p.get("pageNo") != "todo"
+                )
+                if combined_text.strip():
+                    if progress_cb:
+                        progress_cb(f"Inferring tasks for Daily app {date_str}...", 0.93)
+                    inferred_tasks = self.ocr.infer_tasks(combined_text, force=force)
+
+            written = self.vault.sync_daily_journal(
+                date_str, pages_data, note_uuid="daily-app", inferred_tasks=inferred_tasks
+            )
             if written is None:
                 # No daily note for this date and create_missing_daily_notes is off.
                 continue

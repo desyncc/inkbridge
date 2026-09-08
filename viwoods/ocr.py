@@ -250,6 +250,19 @@ class OCREngine:
 
         return tags
 
+    def _ollama_options(self, **overrides) -> dict:
+        """
+        Ollama loads models with a 4096-token context by default. Thinking
+        models can burn through that on reasoning alone (observed ~3.5k
+        tokens just to decide a page was blank), leaving nothing left for
+        the actual answer, which comes back truncated and empty. Give
+        thinking room to finish before the response is cut off.
+        """
+        options = dict(overrides)
+        if getattr(self.config, "ollama_think", False):
+            options["num_ctx"] = 32768
+        return options
+
     def _chat_ollama(self, prompt: str) -> str:
         """Text-only Ollama chat call, used for tag inference."""
         url = f"{self.config.ollama_url.rstrip('/')}/api/chat"
@@ -258,9 +271,10 @@ class OCREngine:
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
             "think": getattr(self.config, "ollama_think", False),
-            "options": {"temperature": 0.2}
+            "options": self._ollama_options(temperature=0.2)
         }
-        with httpx.Client(timeout=120.0) as client:
+        timeout = 600.0 if getattr(self.config, "ollama_think", False) else 120.0
+        with httpx.Client(timeout=timeout) as client:
             resp = client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -458,12 +472,13 @@ if ($engine -eq $null) {{
             ],
             "stream": False,
             "think": getattr(self.config, "ollama_think", False),
-            "options": {
-                "temperature": 0.1
-            }
+            "options": self._ollama_options(temperature=0.1)
         }
 
-        with httpx.Client(timeout=180.0) as client:
+        # Thinking models can take several minutes to reason through a page
+        # before answering; the non-thinking timeout would cut them off.
+        timeout = 600.0 if getattr(self.config, "ollama_think", False) else 180.0
+        with httpx.Client(timeout=timeout) as client:
             resp = client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()

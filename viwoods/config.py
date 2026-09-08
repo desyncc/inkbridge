@@ -56,6 +56,12 @@ class Config(BaseModel):
     infer_tags: bool = False
     max_inferred_tags: int = 6
 
+    # Auto-tasks: asks the active OCR engine's model to pull action items out
+    # of a notebook's transcribed text into a "Viwoods Tasks" callout. Off by
+    # default since it adds an extra model call per notebook.
+    infer_tasks: bool = False
+    max_inferred_tasks: int = 10
+
     # Sync Preferences
     auto_sync_interval: int = 0  # 0 = disabled, >0 = minutes (serve mode)
     download_recordings: bool = True  # save meeting audio into the attachments folder

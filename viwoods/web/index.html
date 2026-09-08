@@ -314,6 +314,15 @@
             <input type="number" id="cfgMaxInferredTags" class="input-text" min="1" step="1" value="6">
           </div>
 
+          <div class="form-check">
+            <input type="checkbox" id="cfgInferTasks">
+            <label for="cfgInferTasks">Infer tasks from note content <small class="form-hint">(one extra text call per notebook, using the same engine and model above; added as a "Viwoods Tasks" callout)</small></label>
+          </div>
+          <div class="form-group">
+            <label for="cfgMaxInferredTasks">Max Inferred Tasks</label>
+            <input type="number" id="cfgMaxInferredTasks" class="input-text" min="1" step="1" value="10">
+          </div>
+
           <div id="secLMStudio" class="engine-details hidden">
             <div class="form-row">
               <div class="form-group">

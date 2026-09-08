@@ -66,6 +66,33 @@ def _upsert_note_block(section: str, uuid: str, body: str) -> str:
     return block
 
 
+# A second, separate marked region sits right under the heading, above the
+# per-notebook transcript blocks, so inferred tasks stay visible without
+# scrolling past the transcripts to find them. It reuses the same per-uuid
+# sub-block scheme as the notes region above (%% viwoods:note <uuid> %%),
+# just scoped to this region's own start/end markers instead.
+VIWOODS_TASKS_START = "%% viwoods:tasks-start %%"
+VIWOODS_TASKS_END = "%% viwoods:tasks-end %%"
+
+
+def _task_callout(tasks: List[str]) -> str:
+    lines = ["> [!todo] Viwoods Tasks"] + [f"> - [ ] {task}" for task in tasks]
+    return "\n".join(lines)
+
+
+def _remove_note_block(section: str, uuid: str) -> str:
+    """Strips this uuid's sub-block from the section entirely, if present."""
+    start_marker = _note_start_marker(uuid)
+    end_marker = _note_end_marker(uuid)
+    start_idx = section.find(start_marker)
+    if start_idx == -1:
+        return section
+    end_idx = section.find(end_marker, start_idx)
+    if end_idx == -1:
+        return section[:start_idx].strip("\n")
+    return (section[:start_idx] + section[end_idx + len(end_marker):]).strip("\n")
+
+
 def _to_date_str(value: Any) -> Optional[str]:
     """Best-effort YYYY-MM-DD from an epoch (s or ms) or a timestamp string."""
     if isinstance(value, bool) or value in (None, "", 0):
@@ -238,6 +265,13 @@ class ObsidianVault:
 
         body = [f"# {safe_title}", ""]
 
+        inferred_tasks = metadata.get("inferred_tasks") or []
+        if inferred_tasks:
+            body.append("> [!todo] Viwoods Tasks")
+            for task in inferred_tasks:
+                body.append(f"> - [ ] {task}")
+            body.append("")
+
         if pages_dropped:
             body.append(
                 f"> [!warning] {len(pages_data)} of {total_available} pages synced, "
@@ -355,13 +389,58 @@ class ObsidianVault:
             rebuilt += "\n" + tail.lstrip("\n")
         return rebuilt
 
+    def inject_tasks_section(self, content: str, heading: str, uuid: str, tasks: List[str]) -> str:
+        """
+        Upserts this source's Viwoods Tasks callout in a fixed region
+        directly under `heading`, above the transcript sub-blocks that
+        inject_journal_section manages. Call this AFTER inject_journal_section
+        so the heading already exists to attach to. An empty `tasks` list
+        removes this source's callout instead of leaving an empty stub, and
+        the whole region is dropped once no source has any tasks left.
+        """
+        heading = heading.strip()
+        match = re.search(rf"^{re.escape(heading)}[ \t]*$", content, re.MULTILINE)
+        if not match:
+            return content
+
+        head_end = match.end()
+        rest = content[head_end:]
+
+        start_idx = rest.find(VIWOODS_TASKS_START)
+        end_idx = rest.find(VIWOODS_TASKS_END, start_idx + len(VIWOODS_TASKS_START)) if start_idx != -1 else -1
+
+        if start_idx != -1 and end_idx != -1:
+            gap = rest[:start_idx]
+            section = rest[start_idx + len(VIWOODS_TASKS_START):end_idx]
+            tail = rest[end_idx + len(VIWOODS_TASKS_END):]
+            new_section = (
+                _upsert_note_block(section, uuid, _task_callout(tasks)) if tasks
+                else _remove_note_block(section, uuid)
+            )
+            if not new_section.strip():
+                return content[:head_end] + gap + tail
+            return (
+                content[:head_end] + gap + VIWOODS_TASKS_START + "\n" +
+                new_section + "\n" + VIWOODS_TASKS_END + tail
+            )
+
+        if not tasks:
+            return content
+
+        block = _note_block(uuid, _task_callout(tasks))
+        return (
+            content[:head_end] + "\n" + VIWOODS_TASKS_START + "\n" +
+            block + "\n" + VIWOODS_TASKS_END + "\n" + rest.lstrip("\n")
+        )
+
     def sync_daily_journal(
         self,
         date_str: str,
         pages_data: List[Dict[str, Any]],
         raw_meta: Optional[Dict[str, Any]] = None,
         note_uuid: Optional[str] = None,
-        create_missing: Optional[bool] = None
+        create_missing: Optional[bool] = None,
+        inferred_tasks: Optional[List[str]] = None
     ) -> Optional[Path]:
         """
         Locates the user's daily journal note at:
@@ -394,6 +473,8 @@ class ObsidianVault:
             content = raw.decode("utf-8").replace("\r\n", "\n")
 
             new_content = self.inject_journal_section(content, heading, uuid, body)
+            if inferred_tasks is not None:
+                new_content = self.inject_tasks_section(new_content, heading, uuid, inferred_tasks)
 
             with open(target_note, "w", encoding="utf-8", newline=newline) as f:
                 f.write(new_content)
@@ -408,6 +489,10 @@ class ObsidianVault:
         # If the user hasn't created today's note yet, create it cleanly
         month_dir.mkdir(parents=True, exist_ok=True)
         section = _upsert_note_block("", uuid, body)
+        tasks_region = ""
+        if inferred_tasks:
+            tasks_block = _note_block(uuid, _task_callout(inferred_tasks))
+            tasks_region = f"{VIWOODS_TASKS_START}\n{tasks_block}\n{VIWOODS_TASKS_END}\n"
         template_content = (
             f"---\n"
             f"tags:\n"
@@ -417,6 +502,7 @@ class ObsidianVault:
             f"## 🗓️ Timeline\n\n"
             f"---\n\n"
             f"{heading}\n"
+            f"{tasks_region}"
             f"{VIWOODS_START}\n"
             f"{section}\n"
             f"{VIWOODS_END}\n"

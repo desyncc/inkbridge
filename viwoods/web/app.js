@@ -116,6 +116,8 @@ const SETTINGS_FIELDS = {
   cfgLMStudioModel: { field: "lmstudio_model" },
   cfgInferTags: { field: "infer_tags", type: "checkbox" },
   cfgMaxInferredTags: { field: "max_inferred_tags", type: "number" },
+  cfgInferTasks: { field: "infer_tasks", type: "checkbox" },
+  cfgMaxInferredTasks: { field: "max_inferred_tasks", type: "number" },
   cfgDailyAppDaysBack: { field: "daily_app_days_back", type: "number" }
 };
 

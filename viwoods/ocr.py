@@ -13,6 +13,7 @@ from .paths import data_path
 
 CACHE_FILE = data_path("ocr_cache.json")
 TAG_CACHE_FILE = data_path("tag_cache.json")
+TASK_CACHE_FILE = data_path("task_cache.json")
 
 # Transcripts held in memory before the cache file is rewritten. A notebook is
 # flushed as soon as it finishes, so at most this many can be lost on a crash.
@@ -31,6 +32,7 @@ class OCREngine:
         self._pending: set = set()
         self._warned: set = set()
         self.tag_cache = read_json(TAG_CACHE_FILE, {})
+        self.task_cache = read_json(TASK_CACHE_FILE, {})
 
     def _warn_once(self, key: str, message: str) -> None:
         """Prints a configuration error once per process, not once per page."""
@@ -250,6 +252,81 @@ class OCREngine:
 
         return tags
 
+    def task_cache_key(self, text: str) -> str:
+        """Cache key for a task suggestion, scoped to the current engine and model."""
+        engine = (self.config.ocr_engine or "").lower()
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        return f"{engine}:{self._active_model(engine)}:{digest}"
+
+    def _parse_tasks(self, raw: str, max_tasks: int) -> List[str]:
+        """Turns a model's newline-separated reply into clean, deduped task lines."""
+        raw = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.DOTALL)
+        tasks: List[str] = []
+        seen = set()
+        for line in raw.splitlines():
+            line = line.strip().lstrip("-*").strip()
+            line = re.sub(r"^\[[ xX]?\]\s*", "", line)  # strip any checkbox the model added itself
+            if not line or line.upper() == "NONE":
+                continue
+            if line not in seen:
+                seen.add(line)
+                tasks.append(line)
+            if len(tasks) >= max_tasks:
+                break
+        return tasks
+
+    def infer_tasks(self, text: str, force: bool = False) -> List[str]:
+        """
+        Asks the active engine's model to pull action items out of a
+        notebook's combined transcript. Results are cached per engine, model
+        and text content, like transcripts and tags are.
+        """
+        text = (text or "").strip()
+        if not text:
+            return []
+
+        engine = (self.config.ocr_engine or "").lower()
+        key = self.task_cache_key(text)
+        if not force and key in self.task_cache:
+            return self.task_cache[key]
+
+        max_tasks = max(1, getattr(self.config, "max_inferred_tasks", 10))
+        prompt = (
+            f"Read the note below and list up to {max_tasks} concrete action items, tasks or "
+            "to-dos the person wrote or clearly implied (e.g. 'need to call the dentist', "
+            "'follow up with Sam about the invoice'). Only include real, actionable items — skip "
+            "things already marked done, vague statements, and anything not actionable. "
+            "Reply with ONLY the tasks, one per line, no numbering or bullets, nothing else. "
+            "If there are no tasks, reply with NONE.\n\n---\n" + text[:6000]
+        )
+
+        try:
+            if engine == "ollama":
+                raw = self._chat_ollama(prompt)
+            elif engine == "lmstudio":
+                raw = self._chat_lmstudio(prompt)
+            elif engine == "gemini":
+                if not (self.config.gemini_api_key or "").strip():
+                    return []
+                raw = self._chat_gemini(prompt)
+            else:
+                return []
+        except Exception as e:
+            print(f"Warning: Task inference failed ({e}).")
+            return []
+
+        tasks = self._parse_tasks(raw, max_tasks)
+
+        def mutate(disk_cache: dict) -> None:
+            disk_cache[key] = tasks
+
+        try:
+            self.task_cache = update_json(TASK_CACHE_FILE, mutate, {})
+        except Exception as e:
+            print(f"Warning: Failed to save task cache: {e}")
+
+        return tasks
+
     def _ollama_options(self, **overrides) -> dict:
         """
         Ollama loads models with a 4096-token context by default. Thinking
@@ -454,8 +531,12 @@ if ($engine -eq $null) {{
 
         prompt = (
             "Transcribe this handwritten page from a digital e-ink notebook accurately into clean Markdown. "
-            "Preserve lists, bullet points, checkboxes, headings, dates, and paragraph structure. "
-            "Do not add commentary, conversational filler, or introductions—output ONLY the transcribed text."
+            "Preserve lists, bullet points, checkboxes, headings, dates, math formulas, and paragraph structure. "
+            "Render checkboxes as '- [ ]' for unchecked and '- [x]' for checked. "
+            "Only transcribe text that is actually visible on the page—do not invent, guess, or fill in illegible "
+            "handwriting. If the page is blank or has no legible writing, output nothing. "
+            "Do not add commentary, conversational filler, or introductions, and do not wrap the output in a code "
+            "block or markdown fence—output ONLY the transcribed text."
         )
         if context:
             prompt += f"\nContext regarding this note: {context}"

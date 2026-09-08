@@ -115,6 +115,7 @@ class ConfigUpdateRequest(BaseModel):
     lmstudio_model: Optional[str] = None
     ollama_url: Optional[str] = None
     ollama_model: Optional[str] = None
+    ollama_think: Optional[bool] = None
     token: Optional[str] = None
     auto_sync_interval: Optional[int] = None
     download_recordings: Optional[bool] = None

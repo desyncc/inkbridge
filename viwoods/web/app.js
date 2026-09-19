@@ -1,4 +1,4 @@
-// Viwoods Companion Web App Logic
+// InkBridge Web App Logic
 
 let activeNote = null;
 let activePageIndex = 0;

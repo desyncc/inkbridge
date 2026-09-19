@@ -1,4 +1,4 @@
-Fix the following bugs in this Viwoods Companion project (companion.py + viwoods/ package + viwoods/web/). Work through them in order, one commit-sized change at a time. After each fix, run a quick sanity check (python -m py_compile on touched files, and the pytest suite once it exists). Do not touch the slider-captcha login code in client.py beyond leaving it as-is.
+Fix the following bugs in this InkBridge project (companion.py + viwoods/ package + viwoods/web/). Work through them in order, one commit-sized change at a time. After each fix, run a quick sanity check (python -m py_compile on touched files, and the pytest suite once it exists). Do not touch the slider-captcha login code in client.py beyond leaving it as-is.
 
 ## 1. Data-loss and secret-leak fixes (do these first)
 

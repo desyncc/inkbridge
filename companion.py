@@ -1,5 +1,5 @@
 """
-Viwoods Companion - Main CLI & Service Launcher
+InkBridge - Main CLI & Service Launcher
 Sync your notebooks and daily handwriting from cloud.viwoods.com to Obsidian.
 """
 
@@ -26,7 +26,7 @@ def cmd_status():
     cfg = load_config()
     client = ViwoodsClient(cfg)
     print("=" * 55)
-    print("           VIWOODS COMPANION STATUS")
+    print("           INKBRIDGE STATUS")
     print("=" * 55)
     print(f"Vault Directory:     {cfg.vault_path}")
     print(f"Mirrored Folder:     {cfg.vault_mirror_folder}/")
@@ -95,7 +95,7 @@ def cmd_sync(force=False, engine=None, dry_run=False):
         cfg.ocr_engine = engine
     eng = SyncEngine(cfg)
     action = "Dry Run" if dry_run else "Starting Full Sync"
-    print(f"\n[Viwoods Companion] {action} into Obsidian ({cfg.vault_path})...")
+    print(f"\n[InkBridge] {action} into Obsidian ({cfg.vault_path})...")
     print(f"Using OCR engine: {cfg.ocr_engine}")
     if dry_run:
         print("Note: Dry run - nothing will be downloaded, transcribed or written")
@@ -124,7 +124,7 @@ def cmd_journals(days=14, force=False, engine=None):
     if engine:
         cfg.ocr_engine = engine
     eng = SyncEngine(cfg)
-    print(f"\n[Viwoods Companion] Syncing Daily Journals...")
+    print(f"\n[InkBridge] Syncing Daily Journals...")
     print(f"Using OCR engine: {cfg.ocr_engine}")
 
     def on_progress(msg, pct):
@@ -139,7 +139,7 @@ def cmd_daily(days=None, force=False, engine=None):
     if engine:
         cfg.ocr_engine = engine
     eng = SyncEngine(cfg)
-    print(f"\n[Viwoods Companion] Syncing Viwoods Daily app entries...")
+    print(f"\n[InkBridge] Syncing Viwoods Daily app entries...")
     print(f"Using OCR engine: {cfg.ocr_engine}")
 
     def on_progress(msg, pct):
@@ -168,7 +168,7 @@ def cmd_serve(port=8765, host="127.0.0.1", open_browser=True):
 
     url = f"http://{host}:{port}"
     print(f"\n=======================================================")
-    print(f"  Viwoods Companion Web Dashboard running at:")
+    print(f"  InkBridge Web Dashboard running at:")
     print(f"  -> {url}")
     print(f"=======================================================\n")
 
@@ -187,7 +187,7 @@ def cmd_serve(port=8765, host="127.0.0.1", open_browser=True):
 def cmd_daemon(interval=30, max_backoff_minutes=240):
     cfg = load_config()
     engine = SyncEngine(cfg)
-    print(f"\n[Viwoods Companion] Starting background daemon (sync every {interval} minutes)...")
+    print(f"\n[InkBridge] Starting background daemon (sync every {interval} minutes)...")
     print("Press Ctrl+C to stop.\n")
 
     consecutive_failures = 0
@@ -235,7 +235,7 @@ def cmd_export(query=None, fmt="pdf", output_dir=None, list_notes=False):
         return
 
     fmt = fmt.lower()
-    print(f"\n[Viwoods Companion] Exporting '{query}' as {fmt.upper()}...")
+    print(f"\n[InkBridge] Exporting '{query}' as {fmt.upper()}...")
     try:
         if fmt == "html":
             out_file = exp.export_html(query, output_dir=output_dir)
@@ -250,7 +250,7 @@ def cmd_export(query=None, fmt="pdf", output_dir=None, list_notes=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Viwoods Companion for Obsidian")
+    parser = argparse.ArgumentParser(description="InkBridge: sync Viwoods AiPaper into Obsidian")
     subparsers = parser.add_subparsers(dest="command")
 
     # serve / gui

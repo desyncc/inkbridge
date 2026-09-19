@@ -1,6 +1,6 @@
-# 🌲 Viwoods Companion for Obsidian
+# 🌲 InkBridge for Obsidian
 
-**Viwoods Companion** is a dedicated synchronization and handwriting OCR pipeline that connects your **Viwoods AiPaper** e-ink tablet with your **Obsidian Vault**.
+**InkBridge** is a dedicated synchronization and handwriting OCR pipeline that connects your **Viwoods AiPaper** e-ink tablet with your **Obsidian Vault**.
 
 It mirrors your tablet's folder hierarchy, downloads high-resolution ink scans, transcribes handwriting using native offline OCR or AI vision models, and injects daily notes into a clearly delimited block inside your Obsidian journal notes.
 

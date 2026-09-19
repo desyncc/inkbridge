@@ -1,5 +1,5 @@
 """
-Where Viwoods Companion keeps its data.
+Where InkBridge keeps its data.
 
 Config, sync state, the OCR cache and downloaded page scans used to live in the
 project directory, which breaks as soon as the code sits somewhere read-only,

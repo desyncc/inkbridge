@@ -27,7 +27,7 @@ async def lifespan(_app: FastAPI):
         auto_sync_stop.set()
 
 
-app = FastAPI(title="Viwoods Companion API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="InkBridge API", version="1.0.0", lifespan=lifespan)
 
 # No CORS middleware on purpose: the dashboard is served from this same
 # origin, and the API holds the Viwoods token and the Gemini key.

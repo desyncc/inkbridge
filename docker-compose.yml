@@ -1,7 +1,7 @@
 services:
   viwoods:
     build: .
-    image: viwoods-companion
+    image: inkbridge
     restart: unless-stopped
     ports:
       - "8765:8765"

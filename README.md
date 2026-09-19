@@ -1,8 +1,8 @@
 # 🌲 InkBridge for Obsidian
 
-**InkBridge** is a dedicated synchronization and handwriting OCR pipeline that connects your **Viwoods AiPaper** e-ink tablet with your **Obsidian Vault**.
+**InkBridge** syncs your **Viwoods AiPaper** e-ink tablet into your **Obsidian Vault** — notebooks, handwriting OCR, and daily journal entries, all in one pipeline.
 
-It mirrors your tablet's folder hierarchy, downloads high-resolution ink scans, transcribes handwriting using native offline OCR or AI vision models, and injects daily notes into a clearly delimited block inside your Obsidian journal notes.
+It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transcribes your handwriting with local OCR or AI vision models, and drops the result into a clearly delimited block inside your Obsidian daily notes.
 
 ---
 
@@ -24,6 +24,7 @@ It mirrors your tablet's folder hierarchy, downloads high-resolution ink scans, 
   - **Windows Native OCR**: 100% offline via `Windows.Media.Ocr`. **Windows only** — on Linux/macOS the app reports it and transcribes nothing, so pick another engine there.
   - **Content-Addressable Cache**: keyed `engine:model:sha256`, so a page is transcribed once per model and switching models re-transcribes rather than serving a stale result.
 - **🏷️ Optional Auto-Tagging**: set `infer_tags` to have the active engine's model read a notebook's combined transcript and suggest Obsidian tags for its frontmatter (`max_inferred_tags` caps how many). Cached the same way transcripts are, so it costs one text call per notebook, not per sync.
+- **☑️ Optional Auto-Tasks**: set `infer_tasks` to have the active engine's model pull action items out of a notebook's transcribed text into a "Viwoods Tasks" callout under the same heading as the transcript (`max_inferred_tasks` caps how many). Same deal as auto-tagging — one extra text call per notebook, cached, and it costs nothing extra per sync.
 - **🌐 Modern Web Dashboard** (loopback only, `127.0.0.1`):
   - Browse your cloud folders and notebooks interactively.
   - Side-by-side split view comparing high-res handwritten ink with the extracted markdown transcript.
@@ -98,6 +99,9 @@ default:
   "infer_tags": false,
   "max_inferred_tags": 6,
 
+  "infer_tasks": false,
+  "max_inferred_tasks": 10,
+
   "auto_sync_interval": 0,
   "download_recordings": true,
   "max_pages_per_notebook": 50,
@@ -125,6 +129,8 @@ default:
 | `ollama_think` | Pass `think` to Ollama for reasoning models. |
 | `infer_tags` | Ask the active OCR engine's model to suggest Obsidian tags from a notebook's transcribed text, added to that note's `tags:` frontmatter alongside `viwoods`/`notebook`. One extra text-only call per notebook (skipped if there's no transcript); results are cached per engine/model/content like transcripts are, and cleared by `--force`. Daily journal notes are never touched — only the mirrored notebook file's own frontmatter. |
 | `max_inferred_tags` | Cap on how many tags `infer_tags` adds per notebook. |
+| `infer_tasks` | Ask the active OCR engine's model to pull action items out of a notebook's transcribed text into a "Viwoods Tasks" callout, injected under the same heading as the transcript. One extra text-only call per notebook (skipped if there's no transcript); cached per engine/model/content like transcripts are. An empty result removes the callout instead of leaving an empty one. |
+| `max_inferred_tasks` | Cap on how many tasks `infer_tasks` pulls out per notebook. |
 | `auto_sync_interval` | Minutes between automatic syncs while `serve` is running. `0` disables. |
 | `download_recordings` | Save meeting audio into the attachments folder and link it. |
 | `max_pages_per_notebook` | Cap on pages per notebook (large imported PDF planners). `0` means no cap; when pages are dropped the mirrored note says so. |

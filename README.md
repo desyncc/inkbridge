@@ -1,5 +1,7 @@
 # 🌲 InkBridge for Obsidian
 
+> **Unofficial fan project.** Not made by, affiliated with, or endorsed by Viwoods. If Viwoods themselves ever wants this taken down, just say so and it will be, no argument.
+
 **InkBridge** syncs your **Viwoods AiPaper** e-ink tablet into your **Obsidian Vault** — notebooks, handwriting OCR, and daily journal entries, all in one pipeline.
 
 It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transcribes your handwriting with local OCR or AI vision models, and drops the result into a clearly delimited block inside your Obsidian daily notes.

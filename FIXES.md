@@ -1,5 +1,3 @@
-Fix the following bugs in this InkBridge project (companion.py + viwoods/ package + viwoods/web/). Work through them in order, one commit-sized change at a time. After each fix, run a quick sanity check (python -m py_compile on touched files, and the pytest suite once it exists). Do not touch the slider-captcha login code in client.py beyond leaving it as-is.
-
 ## 1. Data-loss and secret-leak fixes (do these first)
 
 1.1 viwoods/vault.py sync_daily_journal(): the injected section is delimited by guessing the "next H1" with the regex `\n(#[^#].*)`. This wipes any `## ...` H2 section that follows the heading, and also mis-treats `#tag` lines as headings. Replace with explicit markers: write the injected block as

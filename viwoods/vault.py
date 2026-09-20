@@ -140,9 +140,12 @@ class ObsidianVault:
         self.attachments_dir = self.vault_dir / config.vault_attachments_folder
         self.daily_dir = self.vault_dir / config.daily_folder
 
-        # Ensure directories exist
-        self.mirror_dir.mkdir(parents=True, exist_ok=True)
-        self.attachments_dir.mkdir(parents=True, exist_ok=True)
+        # Directories are created at write time (save_attachment,
+        # mirror_notebook, sync_daily_journal), not here: instantiating the
+        # vault with the unconfigured placeholder path must not litter the
+        # working directory with a `C:\Users\You\Obsidian` tree (the default
+        # config is a Windows path, and the dashboard builds a vault object
+        # on every /api/status call).
 
     def _sanitize_filename(self, name: str, max_length: int = 60) -> str:
         """
@@ -188,6 +191,7 @@ class ObsidianVault:
         # Generous limit: the caller has already budgeted the title, and the
         # uuid/page suffix must not be clipped.
         safe_name = self._sanitize_filename(dest_filename, max_length=100)
+        self.attachments_dir.mkdir(parents=True, exist_ok=True)
         dest_path = self.attachments_dir / safe_name
         shutil.copy2(src_file, dest_path)
         return str(dest_path)

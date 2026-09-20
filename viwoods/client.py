@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import random
+import secrets
 import time
 from typing import Any, Dict, List, Optional
 import httpx
@@ -129,7 +130,7 @@ def solve_slider_captcha():
 
 
 def secrets_hex(nbytes: int) -> str:
-    return "".join(f"{random.randint(0, 255):02x}" for _ in range(nbytes))
+    return secrets.token_hex(nbytes)
 
 
 class ViwoodsClient:

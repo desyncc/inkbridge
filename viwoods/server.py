@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from .client import AuthError, ViwoodsClient
 from .config import Config, load_config, save_config
 from .ocr import OCREngine
-from .sync import LOCAL_CACHE_DIR, SyncEngine
+from .sync import LOCAL_CACHE_DIR, SyncEngine, _page_sort_key
 from .vault import ObsidianVault
 
 @asynccontextmanager
@@ -277,7 +277,9 @@ def get_note_preview(uuid: str, app_type: int = 1):
     engine = get_engine()
     try:
         detail = engine.client.get_paper_detail(uuid, app_type=app_type)
-        image_pages = detail.get("imagePages", [])
+        # Same ordering the sync applies, so Prev/Next follows the note's
+        # real page order even if the API returns pages unordered.
+        image_pages = sorted(detail.get("imagePages", []), key=_page_sort_key)
         pages = []
         for idx, page in enumerate(image_pages, start=1):
             page_no = page.get("pageNo", idx)

@@ -302,8 +302,8 @@ When synced, your Obsidian vault receives:
 │           │   └── %% viwoods:end %%
 │           └── ## ✅ Check-ins                      <-- never touched
 │
-└── 99 - Viwoods/                                        <-- 1:1 CLOUD MIRROR
-    ├── Attachments/                                <-- page PNGs & recordings
+└── 99 - Viwoods/                               <-- 1:1 CLOUD MIRROR
+    ├── Attachments/                            <-- page PNGs & recordings
     │   └── 2026-09-02_0d7e25d2_p1.png
     ├── Paper/
     │   ├── Journals/

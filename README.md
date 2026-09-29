@@ -12,6 +12,7 @@ It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transc
 
 - **📂 1:1 Directory Mirroring**: Preserves your tablet's exact folder tree (`Paper`, `Journals`, `Meeting`, `Knowledge Base`, etc.) inside your vault under `99 - Viwoods/`.
 - **✍️ Marker-Delimited Daily Journal Sync**: Detects dated notebooks (e.g. `2026-09-02`) or items in your `Journals` folder and updates your existing daily note `YYYY-MM-DD.md`, found in `<daily_folder>/<Month>/`, directly in `<daily_folder>/`, or anywhere below it (e.g. a `YYYY/MM/` layout).
+  - A notebook with a date in its name goes to that day. An undated one in your `Journals` folder goes to the day it was created and stays there when you edit it later. Renaming a dated notebook moves its block to the new day and removes it from the old one.
   - Missing daily notes are left alone by default, so a first sync doesn't create weeks of notes you didn't ask for. Set `create_missing_daily_notes` to `true` to have them created at `<daily_folder>/<Month>/YYYY-MM-DD.md`.
   - Targets the heading configured as `daily_heading` (default `# Transcribed text from AiPaper:`), matched on an exact line.
   - Writes only between `%% viwoods:start %%` and `%% viwoods:end %%`. Everything outside those markers — `## 🌅 Landing`, `## 🗓️ Timeline`, `## ✅ Check-ins`, anything else — is left untouched.

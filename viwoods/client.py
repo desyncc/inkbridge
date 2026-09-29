@@ -393,11 +393,22 @@ class ViwoodsClient:
         return res.get("data", [])
 
     def download_file(self, url: str, target_path: str) -> bool:
-        """Downloads a remote file (CloudFront image or audio) to a local path."""
+        """
+        Downloads a remote file (CloudFront image or audio) to a local path.
+        Written to a temporary file first and renamed into place, so a
+        dropped connection never leaves a truncated file where a good copy
+        (or nothing) used to be.
+        """
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        with self.http.stream("GET", url) as resp:
-            resp.raise_for_status()
-            with open(target_path, "wb") as f:
-                for chunk in resp.iter_bytes(chunk_size=8192):
-                    f.write(chunk)
+        tmp_path = f"{target_path}.part"
+        try:
+            with self.http.stream("GET", url) as resp:
+                resp.raise_for_status()
+                with open(tmp_path, "wb") as f:
+                    for chunk in resp.iter_bytes(chunk_size=8192):
+                        f.write(chunk)
+            os.replace(tmp_path, target_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
         return True

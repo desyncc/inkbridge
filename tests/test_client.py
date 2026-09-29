@@ -169,3 +169,34 @@ def test_other_api_errors_are_not_auth_errors():
     with pytest.raises(RuntimeError, match="server exploded") as excinfo:
         client.get_devices()
     assert not isinstance(excinfo.value, AuthError)
+
+
+# --- downloads ------------------------------------------------------------
+
+class DropsMidStream(httpx.SyncByteStream):
+    def __iter__(self):
+        yield b"half a new pa"
+        raise httpx.ReadError("connection reset")
+
+
+def test_download_replaces_the_file(tmp_path):
+    target = tmp_path / "page.png"
+    target.write_bytes(b"old page")
+
+    make_client(lambda request: httpx.Response(200, content=b"new page")).download_file(
+        "https://cdn.example.com/p.png", str(target))
+
+    assert target.read_bytes() == b"new page"
+    assert list(tmp_path.iterdir()) == [target]
+
+
+def test_interrupted_download_keeps_the_previous_file(tmp_path):
+    target = tmp_path / "page.png"
+    target.write_bytes(b"old page")
+    client = make_client(lambda request: httpx.Response(200, stream=DropsMidStream()))
+
+    with pytest.raises(httpx.ReadError):
+        client.download_file("https://cdn.example.com/p.png", str(target))
+
+    assert target.read_bytes() == b"old page"
+    assert list(tmp_path.iterdir()) == [target]  # no .part left behind

@@ -117,6 +117,7 @@ def cmd_sync(force=False, engine=None, dry_run=False):
         for cat, count in result.get("details", {}).items():
             print(f"  - {cat}: {count} note(s)")
         _print_incomplete(result.get("incomplete", []))
+        _print_skipped_dates(result.get("skipped_dates", []))
     print("=" * 45 + "\n")
 
 
@@ -126,6 +127,13 @@ def _print_incomplete(names):
               f"and will be retried on the next sync:")
         for name in names:
             print(f"  - {name}")
+
+
+def _print_skipped_dates(dates):
+    if dates:
+        span = dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}"
+        print(f"{len(dates)} date(s) ({span}) had no daily note to fill in. Create those "
+              f"notes in Obsidian, or set create_missing_daily_notes to true.")
 
 
 def cmd_journals(days=14, force=False, engine=None):
@@ -142,6 +150,7 @@ def cmd_journals(days=14, force=False, engine=None):
     count = eng.sync_recent_journals(days_back=days, force=force, progress_cb=on_progress)
     print(f"\nCompleted! {count} journal note(s) updated in vault.")
     _print_incomplete(eng.incomplete)
+    _print_skipped_dates(sorted(eng.vault.skipped_dates))
     print()
 
 
@@ -159,6 +168,7 @@ def cmd_daily(days=None, force=False, engine=None):
     count = eng.sync_daily_app(days_back=days, force=force, progress_cb=on_progress)
     print(f"\nCompleted! {count} Daily app entry/entries updated in vault.")
     _print_incomplete(eng.incomplete)
+    _print_skipped_dates(sorted(eng.vault.skipped_dates))
     print()
 
 

@@ -59,3 +59,18 @@ def test_non_object_json_raises(config_path):
 def test_unknown_keys_from_older_versions_are_ignored(config_path):
     config_path.write_text(json.dumps({"token": "t", "mirror_daily": True}))
     assert load_config().token == "t"
+
+
+def test_new_install_does_not_create_missing_daily_notes(config_path):
+    assert load_config().create_missing_daily_notes is False
+    assert json.loads(config_path.read_text())["create_missing_daily_notes"] is False
+
+
+def test_config_from_before_the_setting_keeps_creating_daily_notes(config_path):
+    config_path.write_text(json.dumps({"token": "t"}))
+    assert load_config().create_missing_daily_notes is True
+
+
+def test_explicit_create_missing_setting_is_respected(config_path):
+    config_path.write_text(json.dumps({"token": "t", "create_missing_daily_notes": False}))
+    assert load_config().create_missing_daily_notes is False

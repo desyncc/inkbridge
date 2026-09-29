@@ -472,6 +472,7 @@ class SyncEngine:
 
         self.planned = []
         self.incomplete = []
+        self.vault.skipped_dates.clear()
         wanted = set(app_types) if app_types is not None else None
 
         # Refresh device info
@@ -528,6 +529,9 @@ class SyncEngine:
             summary = f"Sync completed! {total_synced} notes {verb}."
             if self.incomplete:
                 summary += f" {len(self.incomplete)} incomplete, will retry next sync."
+            if self.vault.skipped_dates:
+                summary += (f" {len(self.vault.skipped_dates)} date(s) had no daily note "
+                            f"to fill in (create_missing_daily_notes is off).")
             progress_cb(summary, 1.0)
 
         return {
@@ -536,7 +540,8 @@ class SyncEngine:
             "timestamp": self.state["last_full_sync"],
             "dry_run": dry_run,
             "planned": list(self.planned),
-            "incomplete": list(self.incomplete)
+            "incomplete": list(self.incomplete),
+            "skipped_dates": sorted(self.vault.skipped_dates)
         }
 
     def find_resource_location(
@@ -585,6 +590,7 @@ class SyncEngine:
         """Syncs a single folder subtree instead of everything."""
         self.vault.require_exists()
         self.incomplete = []
+        self.vault.skipped_dates.clear()
         location = self.find_resource_location(app_type, resource_id)
         if location:
             folder_name, rel_path = location["name"], location["rel_path"]
@@ -636,6 +642,7 @@ class SyncEngine:
 
         self.planned = []
         self.incomplete = []
+        self.vault.skipped_dates.clear()
         items = self.list_journal_items()
         if not items:
             return 0

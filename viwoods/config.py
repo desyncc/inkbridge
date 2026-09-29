@@ -37,9 +37,12 @@ class Config(BaseModel):
     vault_attachments_folder: str = "99 - Viwoods/Attachments"
     daily_folder: str = "10 - Journals"
     daily_heading: str = "# Transcribed text from AiPaper:"
-    # False leaves a missing daily note alone, so Obsidian's own daily-note
-    # template (or Templater) creates it first and the sync fills it in later.
-    create_missing_daily_notes: bool = True
+    # Off by default: the first sync pulls weeks of Daily app entries, and
+    # creating a note for each one would scatter files through a vault whose
+    # daily notes may use another layout or template. Off leaves a missing
+    # note alone, so Obsidian's own daily-note template (or Templater) creates
+    # it first and the sync fills it in later.
+    create_missing_daily_notes: bool = False
     # Notebook names like 04-05-2026 are read month-first (April 5) unless
     # this is set. Unambiguous names (13-04-2026) are always read correctly.
     day_first: bool = False
@@ -102,6 +105,10 @@ def load_config() -> Config:
 
     if not isinstance(data, dict):
         raise ConfigError(f"{CONFIG_PATH} must contain a JSON object ({{...}}).")
+
+    # Configs written before create_missing_daily_notes existed got the old
+    # behavior (always create); keep it rather than flipping it silently.
+    data.setdefault("create_missing_daily_notes", True)
 
     # Drop keys from older versions (e.g. the removed mirror_daily) so an
     # existing config file still loads.

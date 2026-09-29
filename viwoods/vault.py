@@ -143,6 +143,9 @@ class ObsidianVault:
         self.mirror_dir = self.vault_dir / config.vault_mirror_folder
         self.attachments_dir = self.vault_dir / config.vault_attachments_folder
         self.daily_dir = self.vault_dir / config.daily_folder
+        # Dates whose daily note didn't exist and wasn't created
+        # (create_missing_daily_notes off), for the sync to report once.
+        self.skipped_dates: set = set()
 
         # Directories are created at write time (save_attachment,
         # mirror_notebook, sync_daily_journal), not here: instantiating the
@@ -459,6 +462,39 @@ class ObsidianVault:
             block + "\n" + VIWOODS_TASKS_END + "\n" + rest.lstrip("\n")
         )
 
+    def find_daily_note(self, date_str: str) -> Optional[Path]:
+        """
+        Finds the existing daily note for `date_str`: <daily>/<Month>/, then
+        <daily>/ itself, then anywhere below <daily> (e.g. a YYYY/MM/ layout).
+        The mirror folder and hidden folders (.obsidian, .trash) are skipped,
+        since a mirrored notebook named by date is not a daily note.
+        """
+        try:
+            month_name = datetime.strptime(date_str, "%Y-%m-%d").strftime("%B")
+        except ValueError:
+            month_name = None
+
+        filename = f"{date_str}.md"
+        candidates = [self.daily_dir / filename]
+        if month_name:
+            candidates.insert(0, self.daily_dir / month_name / filename)
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+
+        if not self.daily_dir.is_dir():
+            return None
+        mirror = self.mirror_dir.resolve()
+        for path in sorted(self.daily_dir.rglob(filename)):
+            rel_parts = path.relative_to(self.daily_dir).parts[:-1]
+            if any(part.startswith(".") for part in rel_parts):
+                continue
+            if path.resolve().is_relative_to(mirror):
+                continue
+            if path.is_file():
+                return path
+        return None
+
     def sync_daily_journal(
         self,
         date_str: str,
@@ -469,25 +505,19 @@ class ObsidianVault:
         inferred_tasks: Optional[List[str]] = None
     ) -> Optional[Path]:
         """
-        Locates the user's daily journal note at:
-        10 - Journals/<Month>/YYYY-MM-DD.md
-        and injects the transcribed text and page scans between explicit
-        markers under the heading '# Transcribed text from AiPaper:'.
+        Finds the user's daily note for `date_str` (see find_daily_note) and
+        injects the transcribed text and page scans between explicit markers
+        under the configured heading. A missing note is only created, at
+        <daily>/<Month>/YYYY-MM-DD.md, when create_missing_daily_notes is on;
+        otherwise the date is recorded in skipped_dates and None is returned.
         """
         try:
             dt = datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
             dt = datetime.now()
 
-        month_name = dt.strftime("%B")  # e.g., "September", "July"
-        month_dir = self.daily_dir / month_name
-        target_note = month_dir / f"{date_str}.md"
-
-        # If not in <Month>/ directory, check direct daily folder
-        if not target_note.exists():
-            fallback_note = self.daily_dir / f"{date_str}.md"
-            if fallback_note.exists():
-                target_note = fallback_note
+        month_dir = self.daily_dir / dt.strftime("%B")  # e.g., "September"
+        target_note = self.find_daily_note(date_str) or month_dir / f"{date_str}.md"
 
         uuid = note_uuid or "default"
         body = self.render_journal_body(pages_data)
@@ -508,8 +538,9 @@ class ObsidianVault:
             return target_note
 
         if create_missing is None:
-            create_missing = getattr(self.config, "create_missing_daily_notes", True)
+            create_missing = getattr(self.config, "create_missing_daily_notes", False)
         if not create_missing:
+            self.skipped_dates.add(date_str)
             return None
 
         # If the user hasn't created today's note yet, create it cleanly

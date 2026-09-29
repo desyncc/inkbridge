@@ -33,7 +33,7 @@ It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transc
   - **Content-Addressable Cache**: keyed `engine:model:sha256`, so a page is transcribed once per model and switching models re-transcribes rather than serving a stale result.
 - **🏷️ Optional Auto-Tagging**: set `infer_tags` to have the active engine's model read a notebook's combined transcript and suggest Obsidian tags for its frontmatter (`max_inferred_tags` caps how many). Cached the same way transcripts are, so it costs one text call per notebook, not per sync.
 - **☑️ Optional Auto-Tasks**: set `infer_tasks` to have the active engine's model pull action items out of a notebook's transcribed text into a "Viwoods Tasks" callout under the same heading as the transcript (`max_inferred_tasks` caps how many). Same deal as auto-tagging — one extra text call per notebook, cached, and it costs nothing extra per sync.
-- **🌐 Modern Web Dashboard** (loopback only, `127.0.0.1`):
+- **🌐 Modern Web Dashboard** (local only: listens on `127.0.0.1`, and refuses requests from other websites open in your browser):
   - Browse your cloud folders and notebooks interactively.
   - Side-by-side split view comparing high-res handwritten ink with the extracted markdown transcript.
   - Transcription is on demand: opening a note never blocks on OCR — press **Transcribe Page** for a page you want text for.
@@ -212,8 +212,15 @@ default:
 ```bash
 python companion.py serve          # or: python companion.py gui
 ```
-Opens the web companion at `http://127.0.0.1:8765` in your default browser. It
-binds loopback only — the dashboard can read your vault and holds your token.
+Opens the web companion at `http://127.0.0.1:8765` in your default browser.
+The dashboard can read your vault and holds your token, so it's local only:
+- It listens on `127.0.0.1`, so other machines can't reach it.
+- It only answers requests addressed to `localhost` or `127.0.0.1`, which
+  stops a website from pointing its own domain at your machine to reach it
+  ("DNS rebinding").
+- It refuses requests that change anything (settings, syncs, transcription)
+  when they come from another website's page.
+
 Use `--port` to change the port and `--no-browser` to skip opening a browser.
 
 ### Check Status & Device Connection
@@ -308,10 +315,21 @@ volumes:
 docker compose up -d --build
 ```
 
-The dashboard is now at `http://<your-server-ip>:8765`. Unlike the native
-`serve` command (loopback-only by design), the container binds `0.0.0.0`
-internally so the port mapping works — treat that address as trusted
-network only, since the dashboard holds your Viwoods token and Gemini key.
+The dashboard has no login and holds your Viwoods token and Gemini key, so
+the compose file only publishes it on the server's own loopback address. To
+use it from your desktop, open an SSH tunnel and browse to
+`http://localhost:8765`:
+
+```bash
+ssh -L 8765:localhost:8765 your-server
+```
+
+To reach it over your network instead, change the port mapping in
+`docker-compose.yml` to `"8765:8765"` and set `VIWOODS_ALLOWED_HOSTS` to the
+name or address you'll type in the browser (e.g.
+`VIWOODS_ALLOWED_HOSTS: "my-server.local,192.168.1.20"`); requests addressed
+to any other name are refused. Anyone who can reach that address can then use
+the dashboard, so only do this on a network you trust.
 
 ### 3. Configure
 

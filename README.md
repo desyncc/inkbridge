@@ -27,9 +27,9 @@ It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transc
 - **☑️ Viwoods Daily App Sync**: pulls the tablet's separate **Daily** app (its own cloud resource, not part of the Paper/Meeting/... folder tree) — each date's page scan and to-dos land in a `daily-app` sub-block in the same daily note, right alongside any notebook-driven journal content. `daily_app_days_back` controls how far back it looks; runs as part of a full sync or on its own via `companion.py daily` / **Sync Daily App** in the dashboard.
 - **🔍 Multi-Engine OCR Pipeline**:
   - **Ollama Vision (default)**: local vision LLMs (e.g. `qwen3.5:9b`, `qwen2.5-vl-7b-instruct`) via native `/api/chat`. Zero cloud dependencies.
-  - **Google Gemini Vision**: multimodal cloud transcription via a Google AI Studio API key (`gemini-2.0-flash`).
+  - **Google Gemini Vision**: multimodal cloud transcription via a Google AI Studio API key (`gemini-3.8-flash` by default).
   - **Local LM Studio**: any OpenAI-compatible vision endpoint.
-  - **Windows Native OCR**: 100% offline via `Windows.Media.Ocr`. **Windows only** — on Linux/macOS the app reports it and transcribes nothing, so pick another engine there.
+  - **Windows Native OCR**: 100% offline via `Windows.Media.Ocr`. **Windows only**, and built for printed text, so expect rough results on handwriting. On Linux/macOS it reports an error and pages wait to be retried until you pick another engine.
   - **Content-Addressable Cache**: keyed `engine:model:sha256`, so a page is transcribed once per model and switching models re-transcribes rather than serving a stale result.
 - **🏷️ Optional Auto-Tagging**: set `infer_tags` to have the active engine's model read a notebook's combined transcript and suggest Obsidian tags for its frontmatter (`max_inferred_tags` caps how many). Cached the same way transcripts are, so it costs one text call per notebook, not per sync.
 - **☑️ Optional Auto-Tasks**: set `infer_tasks` to have the active engine's model pull action items out of a notebook's transcribed text into a "Viwoods Tasks" callout under the same heading as the transcript (`max_inferred_tasks` caps how many). Same deal as auto-tagging — one extra text call per notebook, cached, and it costs nothing extra per sync.
@@ -46,14 +46,66 @@ It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transc
 
 ## 🚀 Quick Start
 
-### 1. Prerequisites
-- Python 3.10+
-- Dependencies:
-  ```bash
-  pip install -r requirements.txt
-  ```
+A first run, start to finish. After `cd inkbridge` in step 1, every command runs from that folder.
 
-### 2. Configuration (`~/.viwoods/config.json`)
+1. **Install InkBridge** (Python 3.10 or newer):
+
+   ```bash
+   git clone https://github.com/desyncc/inkbridge.git
+   cd inkbridge
+   python -m venv .venv
+   ```
+
+   Activate the environment with `source .venv/bin/activate` (Linux/macOS) or `.venv\Scripts\activate` (Windows), then:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Set up handwriting recognition.** The default is [Ollama](https://ollama.com) running a vision model on your own machine. Install Ollama, then download the default model (about 6.6 GB):
+
+   ```bash
+   ollama pull qwen3.5:9b
+   ```
+
+   On a smaller machine, `qwen3.5:4b` (about 3.4 GB) works too; after pulling it, run `python companion.py set-engine ollama --model qwen3.5:4b`. To use Google Gemini in the cloud instead, run `python companion.py set-engine gemini` and paste a [Google AI Studio](https://aistudio.google.com) API key into the dashboard's Settings tab in step 4.
+
+3. **Start the dashboard:**
+
+   ```bash
+   python companion.py serve
+   ```
+
+   It opens at `http://127.0.0.1:8765`.
+
+4. **Fill in two settings** in the dashboard's Settings tab, then save:
+   - **Active Session Token (JWT)**, your Viwoods token. Sign in at `cloud.viwoods.com`, open your browser's developer tools, and copy the value of `localStorage.getItem('token')` from the Console (or the `Access-Token` header of any request in the Network tab).
+   - **Obsidian Vault Path.** The full path of your Obsidian vault folder, e.g. `/home/you/Obsidian` or `C:/Users/You/Obsidian`. Sync won't run until this points at a real folder.
+
+5. **Check the connection:**
+
+   ```bash
+   python companion.py status
+   ```
+
+   It should say `CONNECTED`, list your tablet, and show where your daily notes are. If you use Obsidian's Daily notes core plugin, InkBridge reads its folder, date format and template, so there's nothing to set.
+
+6. **Decide where transcripts go in your daily notes.** InkBridge writes under the heading `# Transcribed text from AiPaper:` (change it with `daily_heading`). Add that heading to your daily-note template where you want the block; a note without it gets the heading added at the end. Daily notes that don't exist yet are skipped, not created, unless you turn on `create_missing_daily_notes`.
+
+7. **Sync.** Preview first, then run it for real (or press **Sync All Notebooks** in the dashboard):
+
+   ```bash
+   python companion.py sync --dry-run
+   python companion.py sync
+   ```
+
+   Your notebooks appear under `99 - Viwoods/` in the vault. The first sync transcribes every page once, so a large library takes a while; later syncs only process what changed. Pages that fail (say Ollama wasn't running) are retried on the next sync.
+
+To keep it syncing, leave the dashboard running with `auto_sync_interval` set, or run `python companion.py daemon` (see [Usage](#-usage--commands)).
+
+---
+
+## ⚙️ Configuration
 
 Everything the app stores lives in a per-user data directory, not in the
 project folder:
@@ -99,7 +151,7 @@ default:
 
   "ocr_engine": "ollama",
   "gemini_api_key": "",
-  "gemini_model": "gemini-2.0-flash",
+  "gemini_model": "gemini-3.8-flash",
   "lmstudio_url": "http://localhost:1234/v1",
   "lmstudio_model": "qwen2.5-vl-7b-instruct",
   "ollama_url": "http://localhost:11434",
@@ -132,10 +184,10 @@ default:
 | `daily_folder` | Folder containing your daily notes. Not used when Obsidian's Daily notes settings are (see `obsidian_daily_notes`). |
 | `obsidian_daily_notes` | Use the folder, date format and template from the vault's Obsidian Daily notes settings (`.obsidian/daily-notes.json`) when it has them. On for new installs; config files from before this setting existed keep using `daily_folder` until it's switched on. Month and weekday names are English, whatever Obsidian's app language. |
 | `daily_heading` | Heading in a daily note under which the marked block is injected. |
-| `create_missing_daily_notes` | Create the daily note, at `<daily_folder>/<Month>/YYYY-MM-DD.md`, when none exists for that date. Off by default: a date with no note is skipped (and listed after the sync) so Obsidian's own daily-note template creates it, and the next sync fills it in. Config files from before this setting existed keep the old behavior (`true`). |
+| `create_missing_daily_notes` | Create the daily note when none exists for that date: where Obsidian's Daily notes settings put it (from its template), or at `<daily_folder>/<Month>/YYYY-MM-DD.md` without them. Off by default: a date with no note is skipped (and listed after the sync) so Obsidian's own daily-note template creates it, and the next sync fills it in. Config files from before this setting existed keep the old behavior (`true`). |
 | `day_first` | How to read a notebook named like `04-05-2026`: `false` (default) is April 5, `true` is 4 May. Names that can only be read one way, like `13-04-2026`, are always read correctly. |
 | `ocr_engine` | `ollama`, `lmstudio`, `gemini` or `windows` (Windows only). |
-| `gemini_api_key`, `gemini_model` | Google AI Studio credentials and model. |
+| `gemini_api_key`, `gemini_model` | Google AI Studio API key and model. A config still set to the old default `gemini-2.0-flash`, which Google shut down in June 2026, uses `gemini-3.8-flash` instead. |
 | `lmstudio_url`, `lmstudio_model` | OpenAI-compatible vision endpoint and model. |
 | `ollama_url`, `ollama_model` | Ollama endpoint and vision model. |
 | `ollama_think` | Pass `think` to Ollama for reasoning models. |
@@ -147,8 +199,6 @@ default:
 | `download_recordings` | Save meeting audio into the attachments folder and link it. |
 | `max_pages_per_notebook` | Cap on pages per notebook (large imported PDF planners). `0` means no cap; when pages are dropped the mirrored note says so. |
 | `daily_app_days_back` | How many days back `companion.py daily` (and the `daily` step of a full sync) pulls from the Viwoods Daily app. |
-
-> **Note on the auth token**: copy it from `cloud.viwoods.com` in your browser's DevTools (`localStorage.getItem('token')` or a Network-tab request header), then paste it into the dashboard's Settings tab.
 
 > **Editing `config.json` by hand**: it must stay valid JSON, so write Windows paths with doubled backslashes (`"C:\\Users\\You\\Obsidian"`) or forward slashes (`"C:/Users/You/Obsidian"`). If the file doesn't parse, InkBridge stops and tells you the line and column; it never overwrites it.
 
@@ -192,7 +242,7 @@ python companion.py journals --days 7
 # Force re-transcribe existing journals with Ollama
 python companion.py journals --days 7 --force --engine ollama
 ```
-Finds your `Journals` folder in Paper and updates the matching daily notes in `daily_folder`.
+Finds your `Journals` folder in Paper and updates the matching daily notes.
 
 ### Sync the Daily App Only
 ```bash
@@ -336,7 +386,7 @@ Attachment names are `<title>_<uuid8>_p<n>.png`; the title is truncated first so
 
 - **Viwoods API**: Implements the proprietary MD5 request signing protocol (`uri` parameter + alphabetical key sorting + secret salt + MD5 hex) with `Machine-Model: web` authentication. Values are serialized as JSON so booleans and nested objects sign the way the server reads them. Folder listings are paginated until exhausted.
 - **Decompression**: Automatically decodes base64-encoded GZIP payloads (`paperSync/get`) to retrieve vector stroke metadata and CloudFront page render URLs.
-- **Native Windows OCR**: Uses PowerShell WinRT `Windows.Media.Ocr.OcrEngine` to access Windows 10/11's built-in handwriting recognition without requiring Tesseract or cloud APIs.
+- **Native Windows OCR**: Uses PowerShell WinRT `Windows.Media.Ocr.OcrEngine`, the text recognition built into Windows 10/11, without requiring Tesseract or cloud APIs. It's designed for printed text, so the vision-model engines do much better on handwriting.
 - **Concurrency**: the sync state and OCR cache are written under a cross-process file lock and merged, so a CLI sync and the dashboard can run at the same time without clobbering each other.
 
 ---
@@ -349,9 +399,10 @@ python -m pytest
 ```
 
 The suite covers the daily-journal marker injection (including legacy
-migration, multiple notebooks per date and CRLF files), attachment naming,
-note lookup, the markdown-to-HTML conversion, request signing and folder
-pagination. It runs against a temporary `VIWOODS_DATA_DIR`, so it never
+migration, multiple notebooks per date and CRLF files), finding and creating
+daily notes from Obsidian's settings, journal dates, retrying failed pages,
+config loading, OCR failure handling, attachment naming, note lookup, the
+markdown-to-HTML conversion, request signing and folder pagination. It runs against a temporary `VIWOODS_DATA_DIR`, so it never
 touches your real config, state or cache.
 
 GitHub Actions runs the suite on every pull request and every push to `main`,

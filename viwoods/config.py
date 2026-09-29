@@ -54,7 +54,7 @@ class Config(BaseModel):
     # OCR Settings. "windows" only works on Windows, so it cannot be the default.
     ocr_engine: str = "ollama"  # "ollama", "lmstudio", "gemini", "windows"
     gemini_api_key: Optional[str] = ""
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-3.8-flash"
     lmstudio_url: str = "http://localhost:1234/v1"
     lmstudio_model: str = "qwen2.5-vl-7b-instruct"
     ollama_url: str = "http://localhost:11434"
@@ -78,6 +78,12 @@ class Config(BaseModel):
     download_recordings: bool = True  # save meeting audio into the attachments folder
     max_pages_per_notebook: int = 50  # Cap on large imported PDF planners
     daily_app_days_back: int = 30  # How far back to pull Daily app pages/to-dos
+
+
+# Gemini models Google has shut down, which InkBridge once used as its
+# default. A config still naming one can only fail, so it gets the current
+# default instead; a model the user picked themselves is left alone.
+RETIRED_GEMINI_DEFAULTS = {"gemini-2.0-flash"}
 
 
 class ConfigError(RuntimeError):
@@ -116,6 +122,9 @@ def load_config() -> Config:
     # Same for reading Obsidian's Daily notes settings: a config from before
     # it existed keeps using daily_folder until the user switches it on.
     data.setdefault("obsidian_daily_notes", False)
+
+    if data.get("gemini_model") in RETIRED_GEMINI_DEFAULTS:
+        data["gemini_model"] = Config.model_fields["gemini_model"].default
 
     # Drop keys from older versions (e.g. the removed mirror_daily) so an
     # existing config file still loads.

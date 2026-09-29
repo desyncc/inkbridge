@@ -83,3 +83,13 @@ def test_new_install_reads_obsidians_daily_note_settings(config_path):
 def test_config_from_before_obsidian_daily_notes_keeps_daily_folder(config_path):
     config_path.write_text(json.dumps({"token": "t", "daily_folder": "Journal"}))
     assert load_config().obsidian_daily_notes is False
+
+
+def test_the_retired_gemini_default_is_replaced(config_path):
+    config_path.write_text(json.dumps({"token": "t", "gemini_model": "gemini-2.0-flash"}))
+    assert load_config().gemini_model == "gemini-3.8-flash"
+
+
+def test_a_chosen_gemini_model_is_kept(config_path):
+    config_path.write_text(json.dumps({"token": "t", "gemini_model": "gemini-3.5-flash-lite"}))
+    assert load_config().gemini_model == "gemini-3.5-flash-lite"

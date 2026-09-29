@@ -1,5 +1,7 @@
 """OCREngine.transcribe: failures raise instead of looking like blank pages."""
 
+import subprocess
+
 import httpx
 import pytest
 
@@ -72,3 +74,46 @@ def test_gemini_key_is_sent_as_a_header_not_in_the_url(ocr, image, monkeypatch):
     assert "AIzaSECRET" not in str(seen[0].url)
     # The error text (printed, and shown in the dashboard) must not leak it.
     assert "AIzaSECRET" not in str(excinfo.value)
+
+
+# --- Windows -----------------------------------------------------------------
+
+def test_a_failed_engine_on_windows_does_not_fall_back_to_windows_ocr(ocr, image, monkeypatch):
+    monkeypatch.setattr(ocr_module.sys, "platform", "win32")
+
+    def down(*args, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    windows_calls = []
+    monkeypatch.setattr(ocr, "_transcribe_ollama", down)
+    monkeypatch.setattr(ocr, "_transcribe_windows", lambda path: windows_calls.append(path) or "")
+
+    with pytest.raises(OCRError, match="connection refused"):
+        ocr.transcribe(image)
+    assert windows_calls == []  # Windows OCR didn't stand in for the chosen engine
+    assert ocr.cached_transcript(image) is None
+
+
+def test_a_failed_powershell_run_is_an_error_not_a_blank_page(ocr, image, monkeypatch):
+    monkeypatch.setattr(ocr_module.sys, "platform", "win32")
+    ocr.config.ocr_engine = "windows"
+    monkeypatch.setattr(
+        ocr_module.subprocess, "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args, 1, stdout="", stderr="Exception calling \"GetFileFromPathAsync\"\nAccess denied"),
+    )
+
+    with pytest.raises(OCRError, match="exited with code 1: Access denied"):
+        ocr.transcribe(image)
+    assert ocr.cached_transcript(image) is None
+
+
+def test_a_successful_powershell_run_returns_its_text(ocr, image, monkeypatch):
+    monkeypatch.setattr(ocr_module.sys, "platform", "win32")
+    ocr.config.ocr_engine = "windows"
+    monkeypatch.setattr(
+        ocr_module.subprocess, "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, stdout="hello\n", stderr=""),
+    )
+
+    assert ocr.transcribe(image) == "hello"

@@ -125,9 +125,6 @@ class OCREngine:
         if not force and key in self.cache:
             return self.cache[key] or ""
 
-        result = ""
-        engine_ran = False
-
         try:
             if engine == "gemini":
                 if not (self.config.gemini_api_key or "").strip():
@@ -136,13 +133,10 @@ class OCREngine:
                         "Settings, or switch the OCR engine (e.g. ollama)."
                     )
                 result = self._transcribe_gemini(image_path, context_prompt)
-                engine_ran = True
             elif engine == "ollama":
                 result = self._transcribe_ollama(image_path, context_prompt)
-                engine_ran = True
             elif engine == "lmstudio":
                 result = self._transcribe_lmstudio(image_path, context_prompt)
-                engine_ran = True
             elif engine == "windows":
                 if sys.platform != "win32":
                     raise OCRConfigurationError(
@@ -151,7 +145,6 @@ class OCREngine:
                         f"'gemini' — no pages will be transcribed until you do."
                     )
                 result = self._transcribe_windows(image_path)
-                engine_ran = True
             else:
                 raise OCRConfigurationError(
                     f"Unknown OCR engine '{engine}'. Valid engines: ollama, "
@@ -162,22 +155,15 @@ class OCREngine:
             self._warn_once(str(e), str(e))
             raise
         except Exception as e:
-            if sys.platform == "win32" and engine != "windows":
-                print(f"Warning: OCR engine '{engine}' failed ({e}), falling back to Windows Native OCR...")
-                try:
-                    result = self._transcribe_windows(image_path)
-                    engine_ran = True
-                except Exception as e2:
-                    print(f"Error: Windows OCR fallback also failed: {e2}")
-                    raise OCRError(f"OCR engine '{engine}' failed ({e}); Windows fallback also failed ({e2})") from e2
-            else:
-                print(f"Error: OCR engine '{engine}' failed ({e}). Ensure Ollama or your vision service is running.")
-                raise OCRError(f"OCR engine '{engine}' failed ({e})") from e
+            # No quiet switch to another engine (Windows OCR used to stand in
+            # on Windows): its text would be cached as this engine's and the
+            # note marked done, so the chosen engine would never be retried.
+            print(f"Error: OCR engine '{engine}' failed ({e}). Ensure Ollama or your vision service is running.")
+            raise OCRError(f"OCR engine '{engine}' failed ({e})") from e
 
-        if engine_ran:
-            self.cache[key] = result
-            self._pending.add(key)
-            self._save_cache()
+        self.cache[key] = result
+        self._pending.add(key)
+        self._save_cache()
 
         return result
 
@@ -448,6 +434,13 @@ if ($engine -eq $null) {{
             encoding="utf-8",
             errors="replace"
         )
+        if proc.returncode != 0:
+            # Otherwise a failed run reads as a blank page and gets cached.
+            detail = (proc.stderr or proc.stdout).strip().splitlines()
+            raise RuntimeError(
+                f"PowerShell OCR exited with code {proc.returncode}"
+                + (f": {detail[-1][:300]}" if detail else "")
+            )
         return proc.stdout.strip()
 
     def _transcribe_gemini(self, image_path: str, context: str = "") -> str:

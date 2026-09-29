@@ -315,6 +315,8 @@ volumes:
 docker compose up -d --build
 ```
 
+> **Already running InkBridge in Docker?** After updating, the dashboard is no longer reachable at `http://<your-server-ip>:8765`. Use the SSH tunnel below, or, to keep reaching it over your network, change the port mapping to `"8765:8765"` and set `VIWOODS_ALLOWED_HOSTS` as described below, then run `docker compose up -d --build`. Your config and synced data are unaffected.
+
 The dashboard has no login and holds your Viwoods token and Gemini key, so
 the compose file only publishes it on the server's own loopback address. To
 use it from your desktop, open an SSH tunnel and browse to

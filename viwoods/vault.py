@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .config import CONFIG_PATH, Config
+from .obsidian import DailyNoteSettings, format_moment, read_daily_note_settings, render_template
 
 # Delimiters for the block Viwoods owns inside a daily note. Everything
 # outside START/END is the user's and is never touched. Obsidian's native
@@ -173,7 +174,15 @@ class ObsidianVault:
         self.vault_dir = Path(os.path.expanduser(config.vault_path)).resolve()
         self.mirror_dir = self.vault_dir / config.vault_mirror_folder
         self.attachments_dir = self.vault_dir / config.vault_attachments_folder
-        self.daily_dir = self.vault_dir / config.daily_folder
+        # Obsidian's own Daily notes settings (folder, date format, template)
+        # take over from daily_folder when the vault has them and
+        # obsidian_daily_notes is on, so notes land where Obsidian puts them.
+        self.daily_settings: Optional[DailyNoteSettings] = None
+        if getattr(config, "obsidian_daily_notes", False):
+            self.daily_settings = read_daily_note_settings(self.vault_dir)
+        folder = self.daily_settings.folder if self.daily_settings else config.daily_folder
+        self.daily_dir = self.vault_dir / folder
+        self._warned_template = False
         # Dates whose daily note didn't exist and wasn't created
         # (create_missing_daily_notes off), for the sync to report once.
         self.skipped_dates: set = set()
@@ -526,7 +535,10 @@ class ObsidianVault:
         """
         if self._block_index is None:
             self._block_index = {}
-            for path in self._iter_daily_notes():
+            # A custom Obsidian date format names notes differently, so look
+            # at every note under the daily folder then.
+            custom = self.daily_settings and self.daily_settings.format != "YYYY-MM-DD"
+            for path in self._iter_daily_notes("*.md" if custom else "????-??-??.md"):
                 try:
                     text = path.read_text(encoding="utf-8")
                 except (OSError, UnicodeDecodeError):
@@ -554,27 +566,64 @@ class ObsidianVault:
         self._block_index[uuid] = {keep} if keep else set()
         return changed
 
+    def describe_daily_notes(self) -> Dict[str, str]:
+        """Where daily notes are looked for, and which setting decided it."""
+        folder = self.daily_dir.relative_to(self.vault_dir).as_posix()
+        if self.daily_settings:
+            return {"source": "obsidian", "folder": "" if folder == "." else folder,
+                    "format": self.daily_settings.format,
+                    "template": self.daily_settings.template}
+        return {"source": "config", "folder": self.config.daily_folder,
+                "format": "MMMM/YYYY-MM-DD", "template": ""}
+
+    def daily_note_path(self, date_str: str) -> Path:
+        """
+        Where the daily note for `date_str` belongs: Obsidian's date format
+        under its folder when its settings are in use, else
+        <daily_folder>/<Month>/YYYY-MM-DD.md.
+        """
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        if self.daily_settings:
+            return self.daily_dir / f"{format_moment(dt, self.daily_settings.format)}.md"
+        return self.daily_dir / dt.strftime("%B") / f"{date_str}.md"
+
     def find_daily_note(self, date_str: str) -> Optional[Path]:
         """
-        Finds the existing daily note for `date_str`: <daily>/<Month>/, then
-        <daily>/ itself, then anywhere below <daily> (e.g. a YYYY/MM/ layout).
+        Finds the existing daily note for `date_str`: where daily_note_path
+        says it belongs, then <daily>/YYYY-MM-DD.md, then a YYYY-MM-DD.md
+        anywhere below <daily> (e.g. notes from before a format change).
         The mirror folder and hidden folders (.obsidian, .trash) are skipped,
         since a mirrored notebook named by date is not a daily note.
         """
-        try:
-            month_name = datetime.strptime(date_str, "%Y-%m-%d").strftime("%B")
-        except ValueError:
-            month_name = None
-
         filename = f"{date_str}.md"
         candidates = [self.daily_dir / filename]
-        if month_name:
-            candidates.insert(0, self.daily_dir / month_name / filename)
+        try:
+            candidates.insert(0, self.daily_note_path(date_str))
+        except ValueError:
+            pass
         for candidate in candidates:
             if candidate.is_file():
                 return candidate
 
         return next(self._iter_daily_notes(filename), None)
+
+    def _new_daily_note_content(self, dt: datetime) -> str:
+        """Obsidian's daily-note template, filled in, or "" when there is none."""
+        template = self.daily_settings.template if self.daily_settings else ""
+        if not template:
+            return ""
+        path = self.vault_dir / template
+        if not path.suffix:
+            path = path.with_suffix(".md")
+        try:
+            text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+        except OSError as e:
+            if not self._warned_template:
+                self._warned_template = True
+                print(f"Warning: daily note template {path} could not be read ({e}); "
+                      f"creating daily notes without it.")
+            return ""
+        return render_template(text, dt, self.daily_settings.format)
 
     def sync_daily_journal(
         self,
@@ -589,8 +638,8 @@ class ObsidianVault:
         Finds the user's daily note for `date_str` (see find_daily_note) and
         injects the transcribed text and page scans between explicit markers
         under the configured heading. A missing note is only created, at
-        <daily>/<Month>/YYYY-MM-DD.md, when create_missing_daily_notes is on;
-        otherwise the date is recorded in skipped_dates and None is returned.
+        daily_note_path(), when create_missing_daily_notes is on; otherwise
+        the date is recorded in skipped_dates and None is returned.
         """
         try:
             dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -598,7 +647,10 @@ class ObsidianVault:
             dt = datetime.now()
 
         month_dir = self.daily_dir / dt.strftime("%B")  # e.g., "September"
-        target_note = self.find_daily_note(date_str) or month_dir / f"{date_str}.md"
+        target_note = self.find_daily_note(date_str) or (
+            self.daily_note_path(dt.strftime("%Y-%m-%d")) if self.daily_settings
+            else month_dir / f"{date_str}.md"
+        )
 
         uuid = note_uuid or "default"
         body = self.render_journal_body(pages_data)
@@ -623,6 +675,18 @@ class ObsidianVault:
         if not create_missing:
             self.skipped_dates.add(date_str)
             return None
+
+        if self.daily_settings:
+            # Create it the way Obsidian would: its template (if any), then
+            # the heading and marked block, added or filled in like any note.
+            target_note.parent.mkdir(parents=True, exist_ok=True)
+            content = self.inject_journal_section(
+                self._new_daily_note_content(dt), heading, uuid, body)
+            if inferred_tasks:
+                content = self.inject_tasks_section(content, heading, uuid, inferred_tasks)
+            with open(target_note, "w", encoding="utf-8") as f:
+                f.write(content)
+            return target_note
 
         # If the user hasn't created today's note yet, create it cleanly
         month_dir.mkdir(parents=True, exist_ok=True)

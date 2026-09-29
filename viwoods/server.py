@@ -115,6 +115,7 @@ class ConfigUpdateRequest(BaseModel):
     daily_folder: Optional[str] = None
     daily_heading: Optional[str] = None
     create_missing_daily_notes: Optional[bool] = None
+    obsidian_daily_notes: Optional[bool] = None
     day_first: Optional[bool] = None
     ocr_engine: Optional[str] = None
     gemini_api_key: Optional[str] = None
@@ -182,6 +183,7 @@ def get_status():
             "exists": vault_exists,
             "mirror_folder": cfg.vault_mirror_folder,
             "daily_folder": cfg.daily_folder,
+            "daily_notes": engine.vault.describe_daily_notes(),
             "notes_synced": notes_synced
         },
         "ocr": {

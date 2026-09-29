@@ -228,7 +228,7 @@
             <div class="form-group">
               <label for="cfgDailyFolder">Daily Notes Folder</label>
               <input type="text" id="cfgDailyFolder" class="input-text" value="10 - Journals">
-              <small class="form-hint">Subfolder in vault containing your active daily notes.</small>
+              <small class="form-hint">Subfolder in vault containing your active daily notes. Not used when Obsidian's Daily notes settings are (below).</small>
             </div>
           </div>
 
@@ -255,6 +255,11 @@
             <label for="cfgDailyAppDaysBack">Daily App: Days Back</label>
             <input type="number" id="cfgDailyAppDaysBack" class="input-text" min="0" step="5" value="30">
             <small class="form-hint">How far back to pull pages and to-dos from the Viwoods Daily app (a separate cloud resource from your notebooks).</small>
+          </div>
+
+          <div class="form-check">
+            <input type="checkbox" id="cfgObsidianDailyNotes" checked>
+            <label for="cfgObsidianDailyNotes">Use Obsidian's Daily notes settings <small class="form-hint">(folder, date format and template from the vault's Daily notes core plugin, when it has them)</small></label>
           </div>
 
           <div class="form-check">

@@ -74,3 +74,12 @@ def test_config_from_before_the_setting_keeps_creating_daily_notes(config_path):
 def test_explicit_create_missing_setting_is_respected(config_path):
     config_path.write_text(json.dumps({"token": "t", "create_missing_daily_notes": False}))
     assert load_config().create_missing_daily_notes is False
+
+
+def test_new_install_reads_obsidians_daily_note_settings(config_path):
+    assert load_config().obsidian_daily_notes is True
+
+
+def test_config_from_before_obsidian_daily_notes_keeps_daily_folder(config_path):
+    config_path.write_text(json.dumps({"token": "t", "daily_folder": "Journal"}))
+    assert load_config().obsidian_daily_notes is False

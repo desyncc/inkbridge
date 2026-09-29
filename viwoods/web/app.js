@@ -92,7 +92,12 @@ async function loadStatus() {
     const mirrorFolder = data.vault.mirror_folder || "Viwoods";
     vaultText.textContent = `Obsidian: ${mirrorFolder}/ (${data.vault.notes_synced} synced)`;
     document.getElementById("lblVaultMirror").textContent = `${mirrorFolder}/`;
-    document.getElementById("lblDailyFolder").textContent = `${data.vault.daily_folder}/`;
+    const daily = data.vault.daily_notes || {};
+    const dailyFolder = daily.folder ?? data.vault.daily_folder;
+    document.getElementById("lblDailyFolder").textContent =
+      daily.source === "obsidian"
+        ? `${dailyFolder || "(vault root)"}/${daily.format}.md (from Obsidian's Daily notes settings)`
+        : `${dailyFolder}/`;
   } catch (err) {
     console.error("Failed to load status:", err);
   }
@@ -105,6 +110,7 @@ const SETTINGS_FIELDS = {
   cfgDailyFolder: { field: "daily_folder" },
   cfgDailyHeading: { field: "daily_heading" },
   cfgCreateMissingDaily: { field: "create_missing_daily_notes", type: "checkbox" },
+  cfgObsidianDailyNotes: { field: "obsidian_daily_notes", type: "checkbox" },
   cfgDayFirst: { field: "day_first", type: "checkbox" },
   cfgAutoSyncInterval: { field: "auto_sync_interval", type: "number" },
   cfgMaxPages: { field: "max_pages_per_notebook", type: "number" },

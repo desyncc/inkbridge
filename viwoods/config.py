@@ -43,6 +43,10 @@ class Config(BaseModel):
     # note alone, so Obsidian's own daily-note template (or Templater) creates
     # it first and the sync fills it in later.
     create_missing_daily_notes: bool = False
+    # Use the vault's own Obsidian Daily notes settings (.obsidian/
+    # daily-notes.json: folder, date format, template) instead of
+    # daily_folder, when the vault has them.
+    obsidian_daily_notes: bool = True
     # Notebook names like 04-05-2026 are read month-first (April 5) unless
     # this is set. Unambiguous names (13-04-2026) are always read correctly.
     day_first: bool = False
@@ -109,6 +113,9 @@ def load_config() -> Config:
     # Configs written before create_missing_daily_notes existed got the old
     # behavior (always create); keep it rather than flipping it silently.
     data.setdefault("create_missing_daily_notes", True)
+    # Same for reading Obsidian's Daily notes settings: a config from before
+    # it existed keeps using daily_folder until the user switches it on.
+    data.setdefault("obsidian_daily_notes", False)
 
     # Drop keys from older versions (e.g. the removed mirror_daily) so an
     # existing config file still loads.

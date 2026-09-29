@@ -30,7 +30,14 @@ def cmd_status():
     print("=" * 55)
     print(f"Vault Directory:     {cfg.vault_path}")
     print(f"Mirrored Folder:     {cfg.vault_mirror_folder}/")
-    print(f"Daily Folder:        {cfg.daily_folder}/")
+    daily = ObsidianVault(cfg).describe_daily_notes()
+    if daily["source"] == "obsidian":
+        print(f"Daily Notes:         {daily['folder'] or '(vault root)'}/{daily['format']}.md "
+              f"(from Obsidian's Daily notes settings)")
+        if daily["template"]:
+            print(f"Daily Template:      {daily['template']}")
+    else:
+        print(f"Daily Folder:        {cfg.daily_folder}/")
     print(f"Active OCR Engine:   {cfg.ocr_engine}")
     if cfg.ocr_engine == "ollama":
         print(f"Ollama URL:          {cfg.ollama_url}")

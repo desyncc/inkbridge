@@ -11,9 +11,11 @@ It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transc
 ## ✨ Features
 
 - **📂 1:1 Directory Mirroring**: Preserves your tablet's exact folder tree (`Paper`, `Journals`, `Meeting`, `Knowledge Base`, etc.) inside your vault under `99 - Viwoods/`.
-- **✍️ Marker-Delimited Daily Journal Sync**: Detects dated notebooks (e.g. `2026-09-02`) or items in your `Journals` folder and updates your existing daily note `YYYY-MM-DD.md`, found in `<daily_folder>/<Month>/`, directly in `<daily_folder>/`, or anywhere below it (e.g. a `YYYY/MM/` layout).
+- **✍️ Marker-Delimited Daily Journal Sync**: Detects dated notebooks (e.g. `2026-09-02`) or items in your `Journals` folder and updates the matching daily note.
+  - **Uses your Obsidian Daily notes settings.** If the vault's Daily notes core plugin has settings (`.obsidian/daily-notes.json`), InkBridge uses the same folder, date format and template, so notes are found and created exactly where Obsidian puts them. `companion.py status` shows what it detected.
+  - Without them, it looks for `YYYY-MM-DD.md` in `<daily_folder>/<Month>/`, directly in `<daily_folder>/`, or anywhere below it (e.g. a `YYYY/MM/` layout).
   - A notebook with a date in its name goes to that day. An undated one in your `Journals` folder goes to the day it was created and stays there when you edit it later. Renaming a dated notebook moves its block to the new day and removes it from the old one.
-  - Missing daily notes are left alone by default, so a first sync doesn't create weeks of notes you didn't ask for. Set `create_missing_daily_notes` to `true` to have them created at `<daily_folder>/<Month>/YYYY-MM-DD.md`.
+  - Missing daily notes are left alone by default, so a first sync doesn't create weeks of notes you didn't ask for. Set `create_missing_daily_notes` to `true` to have them created: with Obsidian's settings, at its path and from its template (`{{date}}`, `{{title}}`, `{{time}}`, `{{date:FORMAT}}`, `{{yesterday}}` and `{{tomorrow}}` are filled in; Templater code isn't run); otherwise at `<daily_folder>/<Month>/YYYY-MM-DD.md`.
   - Targets the heading configured as `daily_heading` (default `# Transcribed text from AiPaper:`), matched on an exact line.
   - Writes only between `%% viwoods:start %%` and `%% viwoods:end %%`. Everything outside those markers — `## 🌅 Landing`, `## 🗓️ Timeline`, `## ✅ Check-ins`, anything else — is left untouched.
   - Each notebook gets its own `%% viwoods:note <uuid> %%` sub-block, so several notebooks can feed the same date and each is updated independently.
@@ -89,6 +91,7 @@ default:
   "vault_attachments_folder": "99 - Viwoods/Attachments",
   "daily_folder": "10 - Journals",
   "daily_heading": "# Transcribed text from AiPaper:",
+  "obsidian_daily_notes": true,
   "create_missing_daily_notes": false,
   "day_first": false,
 
@@ -124,7 +127,8 @@ default:
 | `vault_path` | Absolute path to your Obsidian vault. Syncs refuse to run until it points at an existing folder. |
 | `vault_mirror_folder` | Folder in the vault holding the 1:1 cloud mirror. |
 | `vault_attachments_folder` | Where page PNGs and recordings are written. |
-| `daily_folder` | Folder containing your daily notes. |
+| `daily_folder` | Folder containing your daily notes. Not used when Obsidian's Daily notes settings are (see `obsidian_daily_notes`). |
+| `obsidian_daily_notes` | Use the folder, date format and template from the vault's Obsidian Daily notes settings (`.obsidian/daily-notes.json`) when it has them. On for new installs; config files from before this setting existed keep using `daily_folder` until it's switched on. Month and weekday names are English, whatever Obsidian's app language. |
 | `daily_heading` | Heading in a daily note under which the marked block is injected. |
 | `create_missing_daily_notes` | Create the daily note, at `<daily_folder>/<Month>/YYYY-MM-DD.md`, when none exists for that date. Off by default: a date with no note is skipped (and listed after the sync) so Obsidian's own daily-note template creates it, and the next sync fills it in. Config files from before this setting existed keep the old behavior (`true`). |
 | `day_first` | How to read a notebook named like `04-05-2026`: `false` (default) is April 5, `true` is 4 May. Names that can only be read one way, like `13-04-2026`, are always read correctly. |

@@ -1,5 +1,7 @@
 # 🌲 InkBridge for Obsidian
 
+[![Tests](https://github.com/desyncc/inkbridge/actions/workflows/tests.yml/badge.svg)](https://github.com/desyncc/inkbridge/actions/workflows/tests.yml)
+
 > **Unofficial fan project.** Not made by, affiliated with, or endorsed by Viwoods. If Viwoods themselves ever wants this taken down, just say so and it will be, no argument.
 
 **InkBridge** syncs your **Viwoods AiPaper** e-ink tablet into your **Obsidian Vault** — notebooks, handwriting OCR, and daily journal entries, all in one pipeline.
@@ -347,3 +349,6 @@ migration, multiple notebooks per date and CRLF files), attachment naming,
 note lookup, the markdown-to-HTML conversion, request signing and folder
 pagination. It runs against a temporary `VIWOODS_DATA_DIR`, so it never
 touches your real config, state or cache.
+
+GitHub Actions runs the suite on every pull request and every push to `main`,
+on Linux (Python 3.10 and 3.14) and Windows.

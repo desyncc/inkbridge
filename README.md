@@ -88,6 +88,7 @@ default:
   "daily_folder": "10 - Journals",
   "daily_heading": "# Transcribed text from AiPaper:",
   "create_missing_daily_notes": true,
+  "day_first": false,
 
   "ocr_engine": "ollama",
   "gemini_api_key": "",
@@ -118,12 +119,13 @@ default:
 | `machine_model`, `device_name` | Identify this client to the API; leave as-is. |
 | `api_base_url` | Viwoods Cloud API root. |
 | `secret_key` | Salt for the API's MD5 request signature. Fixed and built into the client — same for every user, nothing to fill in. |
-| `vault_path` | Absolute path to your Obsidian vault. |
+| `vault_path` | Absolute path to your Obsidian vault. Syncs refuse to run until it points at an existing folder. |
 | `vault_mirror_folder` | Folder in the vault holding the 1:1 cloud mirror. |
 | `vault_attachments_folder` | Where page PNGs and recordings are written. |
 | `daily_folder` | Folder containing your daily notes. |
 | `daily_heading` | Heading in a daily note under which the marked block is injected. |
 | `create_missing_daily_notes` | Create the daily note when it does not exist. Set `false` to let Obsidian's own daily-note template create it first. |
+| `day_first` | How to read a notebook named like `04-05-2026`: `false` (default) is April 5, `true` is 4 May. Names that can only be read one way, like `13-04-2026`, are always read correctly. |
 | `ocr_engine` | `ollama`, `lmstudio`, `gemini` or `windows` (Windows only). |
 | `gemini_api_key`, `gemini_model` | Google AI Studio credentials and model. |
 | `lmstudio_url`, `lmstudio_model` | OpenAI-compatible vision endpoint and model. |
@@ -139,6 +141,8 @@ default:
 | `daily_app_days_back` | How many days back `companion.py daily` (and the `daily` step of a full sync) pulls from the Viwoods Daily app. |
 
 > **Note on the auth token**: copy it from `cloud.viwoods.com` in your browser's DevTools (`localStorage.getItem('token')` or a Network-tab request header), then paste it into the dashboard's Settings tab.
+
+> **Editing `config.json` by hand**: it must stay valid JSON, so write Windows paths with doubled backslashes (`"C:\\Users\\You\\Obsidian"`) or forward slashes (`"C:/Users/You/Obsidian"`). If the file doesn't parse, InkBridge stops and tells you the line and column; it never overwrites it.
 
 > **These files hold secrets.** `config.json` contains your Viwoods JWT and your Gemini API key; `ocr_cache.json`, `sync_state.json` and `cache/` contain your note contents and page scans. They live outside the repository, and their old project-root names are listed in `.gitignore` — keep them out of version control and out of shared folders.
 
@@ -197,6 +201,8 @@ Pulls from the Viwoods **Daily** app — a separate cloud resource from your Pap
 python companion.py sync
 ```
 Recursively mirrors all cloud categories (`Paper`, `Meeting`, `Learning`, `Knowledge Base`, `Memo`) into `99 - Viwoods/` in your Obsidian vault. Use `--force` to re-download and re-transcribe existing notes.
+
+If a page can't be downloaded or transcribed (say Ollama isn't running), the note is still written with whatever did work, but it isn't marked as synced, so the next sync retries it automatically.
 
 ```bash
 python companion.py sync --dry-run

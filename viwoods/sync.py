@@ -9,7 +9,7 @@ from .client import ViwoodsClient
 from .config import Config
 from .jsonstore import read_json, update_json
 from .paths import data_path
-from .ocr import OCREngine
+from .ocr import OCREngine, OCRError
 from .vault import ObsidianVault
 
 STATE_FILE = data_path("sync_state.json")
@@ -53,6 +53,9 @@ class SyncEngine:
         self._dirty_notes: set = set()
         # Filled by a dry run with what would have been synced.
         self.planned: List[Dict[str, Any]] = []
+        # Notes left unrecorded because a page failed to download or OCR, so
+        # the next sync retries them instead of skipping them as unmodified.
+        self.incomplete: List[str] = []
 
         LOCAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -86,19 +89,38 @@ class SyncEngine:
         except Exception as e:
             print(f"Warning: Failed to save sync state: {e}")
 
+    @staticmethod
+    def _valid_date(y: str, mo: str, d: str) -> Optional[str]:
+        try:
+            return datetime(int(y), int(mo), int(d)).strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+
     def is_date_str(self, text: str) -> Optional[str]:
-        """Detects if a notebook name is formatted as YYYY-MM-DD or MM-DD-YYYY."""
-        # Check YYYY-MM-DD
-        m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", text.strip())
+        """
+        Detects a notebook name that is a date: YYYY-MM-DD, or MM-DD-YYYY /
+        DD-MM-YYYY. The last two are told apart when one number can't be a
+        month (13-04-2026 is 13 April); when both could be, `day_first` in
+        the config decides. Returns None for anything that isn't a real date.
+        """
+        text = text.strip()
+
+        m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", text)
         if m:
             y, mo, d = m.groups()
-            return f"{y}-{int(mo):02d}-{int(d):02d}"
+            return self._valid_date(y, mo, d)
 
-        # Check MM-DD-YYYY
-        m2 = re.match(r"^(\d{1,2})-(\d{1,2})-(\d{4})$", text.strip())
+        m2 = re.match(r"^(\d{1,2})-(\d{1,2})-(\d{4})$", text)
         if m2:
-            mo, d, y = m2.groups()
-            return f"{y}-{int(mo):02d}-{int(d):02d}"
+            a, b, y = m2.groups()
+            if int(a) > 12:
+                day_first = True
+            elif int(b) > 12:
+                day_first = False
+            else:
+                day_first = getattr(self.config, "day_first", False)
+            mo, d = (b, a) if day_first else (a, b)
+            return self._valid_date(y, mo, d)
 
         return None
 
@@ -162,6 +184,7 @@ class SyncEngine:
             )
 
         pages_data = []
+        failed_pages = []
 
         for p_idx, page in enumerate(image_pages, start=1):
             page_no = page.get("pageNo", p_idx)
@@ -187,11 +210,17 @@ class SyncEngine:
                     dest_name = self.vault.attachment_filename(note_name, uuid, page_no)
                     local_img_path = self.vault.save_attachment(str(local_cache_img), dest_name)
                     if not transcript:
-                        transcript = self.ocr.transcribe(
-                            str(local_cache_img),
-                            context_prompt=f"Notebook: {note_name}",
-                            force=force
-                        )
+                        try:
+                            transcript = self.ocr.transcribe(
+                                str(local_cache_img),
+                                context_prompt=f"Notebook: {note_name}",
+                                force=force
+                            )
+                        except OCRError:
+                            # Already reported by the OCR engine.
+                            failed_pages.append(page_no)
+                elif not transcript:
+                    failed_pages.append(page_no)
 
             pages_data.append({
                 "pageNo": page_no,
@@ -263,6 +292,22 @@ class SyncEngine:
                     inferred_tasks=metadata.get("inferred_tasks")
                 )
 
+        # Flush per notebook: bounded loss on a crash, no O(pages^2) rewrites.
+        self.ocr.flush_cache()
+
+        if failed_pages:
+            # The note is written with whatever did work, but not recorded as
+            # synced: otherwise every later sync would skip it as unmodified
+            # and the missing pages would stay missing until --force.
+            self.incomplete.append(note_name)
+            print(
+                f"Note '{note_name}': page(s) {', '.join(map(str, failed_pages))} "
+                f"could not be downloaded or transcribed; it will be retried on the next sync."
+            )
+            if progress_cb:
+                progress_cb(f"Incomplete, will retry: {note_name}", 1.0)
+            return False
+
         # Update state
         self.state["notes"][uuid] = {
             "name": note_name,
@@ -274,8 +319,6 @@ class SyncEngine:
         }
         self._dirty_notes.add(uuid)
         self._save_state()
-        # Flush per notebook: bounded loss on a crash, no O(pages^2) rewrites.
-        self.ocr.flush_cache()
 
         if progress_cb:
             progress_cb(f"Finished: {note_name}", 1.0)
@@ -421,10 +464,14 @@ class SyncEngine:
         Performs a full sync across the root apps (Paper, Meeting, Learning,
         Knowledge Base, Memo), or only `app_types` when given.
         """
+        if not dry_run:
+            self.vault.require_exists()
+
         if progress_cb:
             progress_cb("Connecting to Viwoods Cloud...", 0.01)
 
         self.planned = []
+        self.incomplete = []
         wanted = set(app_types) if app_types is not None else None
 
         # Refresh device info
@@ -478,14 +525,18 @@ class SyncEngine:
 
         if progress_cb:
             verb = "would be updated" if dry_run else "updated"
-            progress_cb(f"Sync completed! {total_synced} notes {verb}.", 1.0)
+            summary = f"Sync completed! {total_synced} notes {verb}."
+            if self.incomplete:
+                summary += f" {len(self.incomplete)} incomplete, will retry next sync."
+            progress_cb(summary, 1.0)
 
         return {
             "total_synced": total_synced,
             "details": details,
             "timestamp": self.state["last_full_sync"],
             "dry_run": dry_run,
-            "planned": list(self.planned)
+            "planned": list(self.planned),
+            "incomplete": list(self.incomplete)
         }
 
     def find_resource_location(
@@ -532,6 +583,8 @@ class SyncEngine:
         progress_cb: Optional[Callable[[str, float], None]] = None
     ) -> int:
         """Syncs a single folder subtree instead of everything."""
+        self.vault.require_exists()
+        self.incomplete = []
         location = self.find_resource_location(app_type, resource_id)
         if location:
             folder_name, rel_path = location["name"], location["rel_path"]
@@ -575,10 +628,14 @@ class SyncEngine:
         dry_run: bool = False
     ) -> int:
         """Syncs recent journal entries from the 'Journals' folder."""
+        if not dry_run:
+            self.vault.require_exists()
+
         if progress_cb:
             progress_cb(f"Scanning for journal entries (last {days_back} days)...", 0.05)
 
         self.planned = []
+        self.incomplete = []
         items = self.list_journal_items()
         if not items:
             return 0
@@ -644,6 +701,9 @@ class SyncEngine:
         note under a fixed 'daily-app' sub-block, alongside whatever notebook
         blocks are already there.
         """
+        if not dry_run:
+            self.vault.require_exists()
+
         if days_back is None:
             days_back = getattr(self.config, "daily_app_days_back", 30)
 
@@ -703,6 +763,7 @@ class SyncEngine:
                 progress_cb(f"Syncing Daily app entry for {date_str}...", 0.5)
 
             pages_data = []
+            page_failed = False
             todo_block = self._render_daily_todos(entries["todos"])
             if todo_block:
                 pages_data.append({"pageNo": "todo", "local_image_path": "", "transcript": todo_block})
@@ -726,11 +787,16 @@ class SyncEngine:
                         )
                         local_img_path = self.vault.save_attachment(str(local_cache_img), dest_name)
                         if not transcript:
-                            transcript = self.ocr.transcribe(
-                                str(local_cache_img),
-                                context_prompt=f"Viwoods Daily app page for {date_str}",
-                                force=force
-                            )
+                            try:
+                                transcript = self.ocr.transcribe(
+                                    str(local_cache_img),
+                                    context_prompt=f"Viwoods Daily app page for {date_str}",
+                                    force=force
+                                )
+                            except OCRError:
+                                page_failed = True
+                    elif not transcript:
+                        page_failed = True
 
                 pages_data.append({
                     "pageNo": it.get("pageOrder") or 1,
@@ -759,6 +825,15 @@ class SyncEngine:
             )
             if written is None:
                 # No daily note for this date and create_missing_daily_notes is off.
+                continue
+
+            if page_failed:
+                # Written with what worked, but left unrecorded so the next
+                # sync retries it (see sync_notebook).
+                self.ocr.flush_cache()
+                self.incomplete.append(f"Daily app: {date_str}")
+                print(f"Daily app entry {date_str}: a page could not be downloaded or "
+                      f"transcribed; it will be retried on the next sync.")
                 continue
 
             self.state["notes"][cache_key] = {

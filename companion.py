@@ -15,10 +15,10 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from viwoods.config import NO_TOKEN_MESSAGE, load_config, save_config
+from viwoods.config import NO_TOKEN_MESSAGE, ConfigError, load_config, save_config
 from viwoods.client import ViwoodsClient
 from viwoods.ocr import OCREngine
-from viwoods.vault import ObsidianVault
+from viwoods.vault import ObsidianVault, VaultNotFoundError
 from viwoods.sync import SyncEngine
 
 
@@ -116,7 +116,16 @@ def cmd_sync(force=False, engine=None, dry_run=False):
         print(f"Sync Complete! {result['total_synced']} notebook(s) updated.")
         for cat, count in result.get("details", {}).items():
             print(f"  - {cat}: {count} note(s)")
+        _print_incomplete(result.get("incomplete", []))
     print("=" * 45 + "\n")
+
+
+def _print_incomplete(names):
+    if names:
+        print(f"{len(names)} note(s) had pages that failed to download or transcribe "
+              f"and will be retried on the next sync:")
+        for name in names:
+            print(f"  - {name}")
 
 
 def cmd_journals(days=14, force=False, engine=None):
@@ -131,7 +140,9 @@ def cmd_journals(days=14, force=False, engine=None):
         print(f"[{int(pct * 100):3d}%] {msg}")
 
     count = eng.sync_recent_journals(days_back=days, force=force, progress_cb=on_progress)
-    print(f"\nCompleted! {count} journal note(s) updated in vault.\n")
+    print(f"\nCompleted! {count} journal note(s) updated in vault.")
+    _print_incomplete(eng.incomplete)
+    print()
 
 
 def cmd_daily(days=None, force=False, engine=None):
@@ -146,7 +157,9 @@ def cmd_daily(days=None, force=False, engine=None):
         print(f"[{int(pct * 100):3d}%] {msg}")
 
     count = eng.sync_daily_app(days_back=days, force=force, progress_cb=on_progress)
-    print(f"\nCompleted! {count} Daily app entry/entries updated in vault.\n")
+    print(f"\nCompleted! {count} Daily app entry/entries updated in vault.")
+    _print_incomplete(eng.incomplete)
+    print()
 
 
 def _open_browser_when_ready(host, port, url, timeout=20.0):
@@ -305,6 +318,15 @@ def main():
 
     args = parser.parse_args()
 
+    try:
+        _dispatch(args)
+    except (ConfigError, VaultNotFoundError) as e:
+        sys.stdout.flush()  # keep any banner already printed above the error
+        print(f"\n[ERROR] {e}\n", file=sys.stderr)
+        sys.exit(1)
+
+
+def _dispatch(args):
     if args.command in ("serve", "gui") or args.command is None:
         cmd_serve(port=getattr(args, "port", 8765), open_browser=not getattr(args, "no_browser", False))
     elif args.command == "export":

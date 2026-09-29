@@ -24,6 +24,8 @@ DAILY_HEADING = "# Transcribed text from AiPaper:"
 
 @pytest.fixture
 def config(tmp_path) -> Config:
+    # Syncs refuse to run against a vault folder that doesn't exist.
+    (tmp_path / "vault").mkdir()
     return Config(
         token="test-token",
         vault_path=str(tmp_path / "vault"),

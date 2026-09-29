@@ -20,7 +20,11 @@ TASK_CACHE_FILE = data_path("task_cache.json")
 CACHE_FLUSH_EVERY = 10
 
 
-class OCRConfigurationError(RuntimeError):
+class OCRError(RuntimeError):
+    """A page could not be transcribed (as opposed to being blank)."""
+
+
+class OCRConfigurationError(OCRError):
     """The selected OCR engine cannot run as configured on this machine."""
 
 
@@ -102,7 +106,14 @@ class OCREngine:
         return self.cache.get(self.cache_key(image_path))
 
     def transcribe(self, image_path: str, context_prompt: str = "", force: bool = False) -> str:
-        """Transcribes a handwritten notebook page image to Markdown text."""
+        """
+        Transcribes a handwritten notebook page image to Markdown text.
+
+        Returns "" for a genuinely blank page. Raises OCRError when the page
+        could not be transcribed (engine down, misconfigured, request failed),
+        so callers never mistake a failure for a blank page and record it as
+        done.
+        """
         if not os.path.exists(image_path):
             return ""
 
@@ -120,12 +131,10 @@ class OCREngine:
         try:
             if engine == "gemini":
                 if not (self.config.gemini_api_key or "").strip():
-                    self._warn_once(
-                        "gemini-no-key",
+                    raise OCRConfigurationError(
                         "Gemini selected but no API key configured. Add one in "
                         "Settings, or switch the OCR engine (e.g. ollama)."
                     )
-                    return ""
                 result = self._transcribe_gemini(image_path, context_prompt)
                 engine_ran = True
             elif engine == "ollama":
@@ -136,22 +145,22 @@ class OCREngine:
                 engine_ran = True
             elif engine == "windows":
                 if sys.platform != "win32":
-                    self._warn_once(
-                        "windows-not-available",
+                    raise OCRConfigurationError(
                         f"OCR engine 'windows' only runs on Windows (this is "
                         f"{sys.platform}). Switch to 'ollama', 'lmstudio' or "
                         f"'gemini' — no pages will be transcribed until you do."
                     )
-                    return ""
                 result = self._transcribe_windows(image_path)
                 engine_ran = True
             else:
-                self._warn_once(
-                    f"unknown-engine-{engine}",
+                raise OCRConfigurationError(
                     f"Unknown OCR engine '{engine}'. Valid engines: ollama, "
                     f"lmstudio, gemini, windows."
                 )
-                return ""
+        except OCRConfigurationError as e:
+            # Same message for every page, so print it once per process.
+            self._warn_once(str(e), str(e))
+            raise
         except Exception as e:
             if sys.platform == "win32" and engine != "windows":
                 print(f"Warning: OCR engine '{engine}' failed ({e}), falling back to Windows Native OCR...")
@@ -160,10 +169,10 @@ class OCREngine:
                     engine_ran = True
                 except Exception as e2:
                     print(f"Error: Windows OCR fallback also failed: {e2}")
-                    return ""
+                    raise OCRError(f"OCR engine '{engine}' failed ({e}); Windows fallback also failed ({e2})") from e2
             else:
                 print(f"Error: OCR engine '{engine}' failed ({e}). Ensure Ollama or your vision service is running.")
-                return ""
+                raise OCRError(f"OCR engine '{engine}' failed ({e})") from e
 
         if engine_ran:
             self.cache[key] = result
@@ -374,15 +383,23 @@ class OCREngine:
                 return choices[0].get("message", {}).get("content", "").strip()
         return ""
 
+    def _gemini_url(self) -> str:
+        return (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.config.gemini_model}:generateContent"
+        )
+
+    def _gemini_headers(self) -> dict:
+        # The key goes in a header, not a ?key= query parameter: httpx puts
+        # the full URL in its error messages, which end up in logs and in the
+        # dashboard.
+        return {"x-goog-api-key": (self.config.gemini_api_key or "").strip()}
+
     def _chat_gemini(self, prompt: str) -> str:
         """Text-only Gemini call, used for tag inference."""
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.config.gemini_model}:generateContent?key={self.config.gemini_api_key}"
-        )
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         with httpx.Client(timeout=60.0) as client:
-            resp = client.post(url, json=payload)
+            resp = client.post(self._gemini_url(), json=payload, headers=self._gemini_headers())
             resp.raise_for_status()
             data = resp.json()
             candidates = data.get("candidates", [])
@@ -446,7 +463,6 @@ if ($engine -eq $null) {{
         if context:
             prompt += f"\nContext regarding this note: {context}"
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.config.gemini_model}:generateContent?key={self.config.gemini_api_key}"
         payload = {
             "contents": [{
                 "parts": [
@@ -462,7 +478,7 @@ if ($engine -eq $null) {{
         }
 
         with httpx.Client(timeout=60.0) as client:
-            resp = client.post(url, json=payload)
+            resp = client.post(self._gemini_url(), json=payload, headers=self._gemini_headers())
             resp.raise_for_status()
             data = resp.json()
             candidates = data.get("candidates", [])

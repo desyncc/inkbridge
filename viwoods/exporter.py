@@ -506,7 +506,9 @@ class NoteExporter:
             pno = p.get("pageNo", 1)
             img_url = p.get("imageUrl", "")
             img_path = cache_dir / f"{uuid}_p{pno}.png"
-            if img_url and not img_path.exists():
+            if img_url:
+                # Fetched fresh (the note may have been edited since it was
+                # cached); an earlier copy is only a fallback if this fails.
                 try:
                     self.client.download_file(img_url, str(img_path))
                 except Exception:

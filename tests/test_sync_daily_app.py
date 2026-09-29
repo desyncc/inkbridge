@@ -151,3 +151,32 @@ def test_two_dates_are_kept_independent(config, vault):
     b = note_path(vault, "2026-09-14").read_text(encoding="utf-8")
     assert "Task A" in a and "Task B" not in a
     assert "Task B" in b and "Task A" not in b
+
+
+def test_an_edited_daily_page_is_downloaded_and_transcribed_again(config, vault):
+    date_str = "2026-09-15"
+    write_note(vault, date_str)
+
+    class EditableClient(FakeClient):
+        ink = b"first draft"
+
+        def download_file(self, url, target_path):
+            with open(target_path, "wb") as f:
+                f.write(self.ink)
+            return True
+
+    class EchoOCR(FakeOCR):
+        def transcribe(self, path, context_prompt="", force=False):
+            with open(path, "rb") as f:
+                return f.read().decode()
+
+    client = EditableClient(notes=[make_note_item(41, date_str, url="https://example.com/d.png")])
+    engine = SyncEngine(config, client=client, ocr=EchoOCR(), vault=vault)
+    assert engine.sync_daily_app(days_back=30) == 1
+
+    client.ink = b"second draft"
+    client._notes = [make_note_item(41, date_str, url="https://example.com/d.png", last_mod=2000)]
+    assert engine.sync_daily_app(days_back=30) == 1
+
+    text = note_path(vault, date_str).read_text(encoding="utf-8")
+    assert "second draft" in text and "first draft" not in text

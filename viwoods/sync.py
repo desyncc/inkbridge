@@ -200,11 +200,19 @@ class SyncEngine:
 
             if img_url:
                 local_cache_img = LOCAL_CACHE_DIR / f"{uuid}_p{page_no}.png"
-                if not local_cache_img.exists() or force:
-                    try:
-                        self.client.download_file(img_url, str(local_cache_img))
-                    except Exception as e:
-                        print(f"Error downloading page {page_no} for {note_name}: {e}")
+                page_ok = True
+                # Only reached for a new, modified or forced notebook, and any
+                # of its pages may have been edited, so always fetch a fresh
+                # copy: a cached one would keep the old ink and transcript. An
+                # unchanged page downloads identical bytes and hits the OCR
+                # cache, so it is not transcribed again.
+                try:
+                    self.client.download_file(img_url, str(local_cache_img))
+                except Exception as e:
+                    print(f"Error downloading page {page_no} for {note_name}: {e}")
+                    # A copy from an earlier sync, if any, is still used below,
+                    # but it may be stale, so the note is retried next sync.
+                    page_ok = False
 
                 if local_cache_img.exists():
                     dest_name = self.vault.attachment_filename(note_name, uuid, page_no)
@@ -218,8 +226,9 @@ class SyncEngine:
                             )
                         except OCRError:
                             # Already reported by the OCR engine.
-                            failed_pages.append(page_no)
-                elif not transcript:
+                            page_ok = False
+
+                if not page_ok:
                     failed_pages.append(page_no)
 
             pages_data.append({
@@ -795,11 +804,13 @@ class SyncEngine:
 
                 if img_url:
                     local_cache_img = LOCAL_CACHE_DIR / f"daily_{it.get('id')}.png"
-                    if not local_cache_img.exists() or force:
-                        try:
-                            self.client.download_file(img_url, str(local_cache_img))
-                        except Exception as e:
-                            print(f"Error downloading Daily app page for {date_str}: {e}")
+                    # This date changed since the last sync, so fetch fresh
+                    # copies (see sync_notebook).
+                    try:
+                        self.client.download_file(img_url, str(local_cache_img))
+                    except Exception as e:
+                        print(f"Error downloading Daily app page for {date_str}: {e}")
+                        page_failed = True
 
                     if local_cache_img.exists():
                         dest_name = self.vault.attachment_filename(

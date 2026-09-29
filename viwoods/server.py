@@ -337,12 +337,13 @@ def _run_transcription(uuid: str, page_no: int, app_type: int, force: bool) -> N
         if page is None:
             raise ValueError(f"Page {page_no} not found in note {uuid}")
 
+        # Always fetch the page as it is now: a copy cached by an earlier sync
+        # predates any edit since. An unchanged page hits the OCR cache.
         img_path = _page_cache_path(uuid, page_no)
-        if not img_path.exists() or force:
-            img_url = page.get("imageUrl") or page.get("pageImageUrl")
-            if not img_url:
-                raise ValueError(f"Page {page_no} has no image to transcribe")
-            engine.client.download_file(img_url, str(img_path))
+        img_url = page.get("imageUrl") or page.get("pageImageUrl")
+        if not img_url:
+            raise ValueError(f"Page {page_no} has no image to transcribe")
+        engine.client.download_file(img_url, str(img_path))
 
         transcript = engine.ocr.transcribe(
             str(img_path),

@@ -56,6 +56,30 @@ class FakeOCR:
         pass
 
 
+class VersionedClient(FakeClient):
+    """Serves whatever `self.ink` currently holds as every page's image."""
+
+    def __init__(self, ink=b"v1"):
+        super().__init__()
+        self.ink = ink
+
+    def download_file(self, url, target_path):
+        if self.fail_download:
+            raise OSError("network down")
+        with open(target_path, "wb") as f:
+            f.write(self.ink)
+        return True
+
+
+class EchoOCR(FakeOCR):
+    """Transcribes a page as the bytes of its image, so edits show up."""
+
+    def transcribe(self, path, context_prompt="", force=False):
+        self.calls += 1
+        with open(path, "rb") as f:
+            return f"ink {f.read().decode()}"
+
+
 def new_item():
     # Sync state persists across the test session, so every note needs its own id.
     return {"uuid": str(uuidlib.uuid4()), "name": "Ideas", "lastModifiedTime": 1000}
@@ -245,3 +269,39 @@ def test_moving_a_notebook_out_of_the_journal_folder_removes_its_block(journal_e
 
     assert item["uuid"] not in daily(vault, 2).read_text(encoding="utf-8")
     assert "journal_date" not in load_sync_state()["notes"][item["uuid"]]
+
+
+# --- Edited pages ------------------------------------------------------------
+
+def test_an_edited_page_is_downloaded_and_transcribed_again(config, vault):
+    item = new_item()
+    client = VersionedClient(b"v1")
+    engine = SyncEngine(config, client=client, ocr=EchoOCR(), vault=vault)
+    engine.sync_notebook(item, "Paper")
+
+    client.ink = b"v2"  # page 1 edited on the tablet
+    item["lastModifiedTime"] = 2000
+    assert engine.sync_notebook(item, "Paper") is True
+
+    mirrored = (vault.mirror_dir / "Paper" / "Ideas.md").read_text(encoding="utf-8")
+    assert "ink v2" in mirrored and "ink v1" not in mirrored
+    attachment = vault.attachments_dir / vault.attachment_filename("Ideas", item["uuid"], 1)
+    assert attachment.read_bytes() == b"v2"
+
+
+def test_a_failed_refresh_keeps_the_old_page_and_retries(config, vault):
+    item = new_item()
+    client = VersionedClient(b"v1")
+    engine = SyncEngine(config, client=client, ocr=EchoOCR(), vault=vault)
+    engine.sync_notebook(item, "Paper")
+
+    client.fail_download = True
+    item["lastModifiedTime"] = 2000
+    assert engine.sync_notebook(item, "Paper") is False
+
+    assert engine.incomplete == ["Ideas"]
+    # Still recorded at the old version, so the next sync tries again.
+    assert load_sync_state()["notes"][item["uuid"]]["last_modified"] == 1000
+    # The previous copy stays in the vault rather than vanishing.
+    attachment = vault.attachments_dir / vault.attachment_filename("Ideas", item["uuid"], 1)
+    assert attachment.read_bytes() == b"v1"

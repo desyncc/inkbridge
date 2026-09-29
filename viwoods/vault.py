@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .config import Config
+from .config import CONFIG_PATH, Config
 
 # Delimiters for the block Viwoods owns inside a daily note. Everything
 # outside START/END is the user's and is never touched. Obsidian's native
@@ -132,6 +132,10 @@ def _legacy_section_end(rest: str) -> int:
     return len(rest)
 
 
+class VaultNotFoundError(RuntimeError):
+    """vault_path does not point at an existing directory."""
+
+
 class ObsidianVault:
     def __init__(self, config: Config):
         self.config = config
@@ -146,6 +150,24 @@ class ObsidianVault:
         # working directory with a `C:\Users\You\Obsidian` tree (the default
         # config is a Windows path, and the dashboard builds a vault object
         # on every /api/status call).
+
+    def require_exists(self) -> None:
+        """
+        Refuses to sync into a vault that isn't there. Without this, an
+        unconfigured install writes the whole mirror into the placeholder
+        path (on Linux/macOS, a folder in the working directory literally
+        named after the Windows placeholder path).
+        """
+        if self.vault_dir.is_dir():
+            return
+        if self.config.vault_path == Config.model_fields["vault_path"].default:
+            reason = "vault_path is still the placeholder"
+        else:
+            reason = f"no folder exists at {self.vault_dir}"
+        raise VaultNotFoundError(
+            f"Obsidian vault not found: {reason}. Set vault_path to your vault's "
+            f"folder in the dashboard's Settings tab or in {CONFIG_PATH}."
+        )
 
     def _sanitize_filename(self, name: str, max_length: int = 60) -> str:
         """

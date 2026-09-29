@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .client import AuthError, ViwoodsClient
-from .config import Config, load_config, save_config
+from .config import Config, ConfigError, load_config, save_config
 from .ocr import OCREngine
 from .sync import LOCAL_CACHE_DIR, SyncEngine, _page_sort_key
 from .vault import ObsidianVault
@@ -28,6 +28,13 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="InkBridge API", version="1.0.0", lifespan=lifespan)
+
+
+@app.exception_handler(ConfigError)
+async def config_error_handler(_request, exc: ConfigError):
+    # Surfaces "config.json is not valid JSON ..." instead of a bare 500.
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
 
 # No CORS middleware on purpose: the dashboard is served from this same
 # origin, and the API holds the Viwoods token and the Gemini key.
@@ -108,6 +115,7 @@ class ConfigUpdateRequest(BaseModel):
     daily_folder: Optional[str] = None
     daily_heading: Optional[str] = None
     create_missing_daily_notes: Optional[bool] = None
+    day_first: Optional[bool] = None
     ocr_engine: Optional[str] = None
     gemini_api_key: Optional[str] = None
     gemini_model: Optional[str] = None

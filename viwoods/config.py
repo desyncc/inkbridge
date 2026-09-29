@@ -1,7 +1,8 @@
 import json
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
+from .jsonstore import write_json_atomic
 from .paths import data_path
 
 CONFIG_PATH = data_path("config.json")
@@ -39,6 +40,9 @@ class Config(BaseModel):
     # False leaves a missing daily note alone, so Obsidian's own daily-note
     # template (or Templater) creates it first and the sync fills it in later.
     create_missing_daily_notes: bool = True
+    # Notebook names like 04-05-2026 are read month-first (April 5) unless
+    # this is set. Unambiguous names (13-04-2026) are always read correctly.
+    day_first: bool = False
 
     # OCR Settings. "windows" only works on Windows, so it cannot be the default.
     ocr_engine: str = "ollama"  # "ollama", "lmstudio", "gemini", "windows"
@@ -69,22 +73,48 @@ class Config(BaseModel):
     daily_app_days_back: int = 30  # How far back to pull Daily app pages/to-dos
 
 
+class ConfigError(RuntimeError):
+    """config.json exists but cannot be used as it stands."""
+
+
 def load_config() -> Config:
-    if CONFIG_PATH.exists():
-        try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                # Drop keys from older versions (e.g. the removed mirror_daily)
-                # so an existing config file still loads.
-                known = set(Config.model_fields)
-                return Config(**{k: v for k, v in data.items() if k in known})
-        except Exception as e:
-            print(f"Warning: Failed to load config from {CONFIG_PATH}: {e}")
-    cfg = Config()
-    save_config(cfg)
-    return cfg
+    if not CONFIG_PATH.exists():
+        cfg = Config()
+        save_config(cfg)
+        return cfg
+
+    # A config that fails to load is reported, never replaced with defaults:
+    # it holds the user's token, and one hand-editing typo must not erase it.
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        hint = ""
+        if "escape" in e.msg:
+            hint = (" Windows paths need doubled backslashes (C:\\\\Users\\\\You) "
+                    "or forward slashes (C:/Users/You).")
+        raise ConfigError(
+            f"{CONFIG_PATH} is not valid JSON: {e.msg} at line {e.lineno}, "
+            f"column {e.colno}.{hint} Fix the file, or delete it to start over."
+        ) from e
+    except OSError as e:
+        raise ConfigError(f"Could not read {CONFIG_PATH}: {e}") from e
+
+    if not isinstance(data, dict):
+        raise ConfigError(f"{CONFIG_PATH} must contain a JSON object ({{...}}).")
+
+    # Drop keys from older versions (e.g. the removed mirror_daily) so an
+    # existing config file still loads.
+    known = set(Config.model_fields)
+    try:
+        return Config(**{k: v for k, v in data.items() if k in known})
+    except ValidationError as e:
+        problems = "; ".join(
+            f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in e.errors()
+        )
+        raise ConfigError(f"{CONFIG_PATH} has invalid settings: {problems}") from e
 
 
 def save_config(cfg: Config) -> None:
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg.model_dump(), f, indent=2)
+    # Atomic, so an interrupted write can't leave a truncated config behind.
+    write_json_atomic(CONFIG_PATH, cfg.model_dump())

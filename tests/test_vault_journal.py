@@ -157,7 +157,8 @@ def test_sync_daily_journal_finds_the_note_outside_the_month_folder(vault):
     assert "flat layout" in path.read_text(encoding="utf-8")
 
 
-def test_sync_daily_journal_creates_a_missing_note(vault):
+def test_sync_daily_journal_creates_a_missing_note_when_enabled(vault):
+    vault.config.create_missing_daily_notes = True
     written = vault.sync_daily_journal(
         "2026-09-02", [{"pageNo": 1, "transcript": "brand new"}], note_uuid="uuid-a"
     )
@@ -177,3 +178,45 @@ def test_create_missing_can_be_disabled(vault):
 
     assert written is None
     assert not note_path(vault).exists()
+
+
+def test_missing_note_is_not_created_by_default(vault):
+    written = vault.sync_daily_journal(
+        "2026-09-02", [{"pageNo": 1, "transcript": "x"}], note_uuid="uuid-a"
+    )
+
+    assert written is None
+    assert not vault.daily_dir.exists()
+    assert vault.skipped_dates == {"2026-09-02"}
+
+
+def test_sync_daily_journal_finds_a_note_in_a_nested_layout(vault):
+    path = vault.daily_dir / "2026" / "09" / "2026-09-02.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(LEGACY_NOTE, encoding="utf-8")
+
+    written = vault.sync_daily_journal(
+        "2026-09-02", [{"pageNo": 1, "transcript": "nested layout"}], note_uuid="uuid-a"
+    )
+
+    assert written == path
+    assert "nested layout" in path.read_text(encoding="utf-8")
+    assert vault.skipped_dates == set()
+
+
+def test_note_search_skips_the_mirror_and_hidden_folders(vault):
+    # Daily folder at the vault root, so the search covers the whole vault.
+    vault.daily_dir = vault.vault_dir
+    decoys = [
+        vault.mirror_dir / "Paper" / "Journals" / "2026-09-02.md",
+        vault.vault_dir / ".trash" / "2026-09-02.md",
+    ]
+    for decoy in decoys:
+        decoy.parent.mkdir(parents=True)
+        decoy.write_text("decoy", encoding="utf-8")
+
+    assert vault.find_daily_note("2026-09-02") is None
+    assert vault.sync_daily_journal(
+        "2026-09-02", [{"pageNo": 1, "transcript": "x"}], note_uuid="uuid-a"
+    ) is None
+    assert all(d.read_text(encoding="utf-8") == "decoy" for d in decoys)

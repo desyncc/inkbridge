@@ -28,7 +28,9 @@ class Engine:
 
 def test_transcribe_page_fetches_the_current_page_not_a_cached_copy(monkeypatch):
     uuid = "server-transcribe-test"
-    server._page_cache_path(uuid, 1).write_bytes(b"stale ink from an old sync")
+    cached = server._page_cache_path(uuid, 1)
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    cached.write_bytes(b"stale ink from an old sync")
     monkeypatch.setattr(server, "get_engine", lambda: Engine(b"fresh ink"))
 
     server._run_transcription(uuid, 1, app_type=1, force=False)

@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from urllib.parse import urlsplit
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -38,6 +39,55 @@ async def config_error_handler(_request, exc: ConfigError):
 
 # No CORS middleware on purpose: the dashboard is served from this same
 # origin, and the API holds the Viwoods token and the Gemini key.
+
+# Listening on 127.0.0.1 keeps other machines out, but not web pages open in
+# the user's own browser. Two checks cover those:
+# - Host: a site can point its own domain at 127.0.0.1 ("DNS rebinding") and
+#   then use this API as if it were same-origin. Its requests still carry
+#   its own domain in Host, so only the names below are answered.
+# - Origin: any site can send a simple cross-site POST (a form, or a fetch
+#   with no preflight). Browsers label it with the page's Origin, so a
+#   request that changes something is refused unless it comes from this
+#   dashboard. Clients that send no Origin (curl, scripts) are not browsers
+#   acting for a web page, so they are let through.
+ALLOWED_HOSTS_ENV = "VIWOODS_ALLOWED_HOSTS"
+DEFAULT_ALLOWED_HOSTS = ("localhost", "127.0.0.1")
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def allowed_hosts() -> set:
+    """Hostnames the dashboard answers to: loopback, plus $VIWOODS_ALLOWED_HOSTS
+    (comma-separated, e.g. for Docker reached as nas.local; "*" allows any)."""
+    extra = os.environ.get(ALLOWED_HOSTS_ENV, "")
+    return set(DEFAULT_ALLOWED_HOSTS) | {h.strip().lower() for h in extra.split(",") if h.strip()}
+
+
+def _hostname(host_header: str) -> str:
+    """'127.0.0.1:8765' -> '127.0.0.1', '[::1]:8765' -> '[::1]'."""
+    host = host_header.strip().lower()
+    if host.startswith("["):
+        return host[:host.find("]") + 1]
+    return host.split(":", 1)[0]
+
+
+@app.middleware("http")
+async def local_access_only(request: Request, call_next):
+    host = request.headers.get("host", "")
+    hosts = allowed_hosts()
+    if "*" not in hosts and _hostname(host) not in hosts:
+        return JSONResponse(status_code=400, content={
+            "detail": f"Requests addressed to '{_hostname(host)}' aren't accepted. "
+                      f"To reach the dashboard under that name, add it to {ALLOWED_HOSTS_ENV}."
+        })
+
+    origin = request.headers.get("origin")
+    if request.method not in SAFE_METHODS and origin is not None:
+        if urlsplit(origin).netloc.lower() != host.lower():
+            return JSONResponse(status_code=403, content={
+                "detail": "Refused a request from another website."
+            })
+
+    return await call_next(request)
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 

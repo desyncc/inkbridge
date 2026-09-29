@@ -1,10 +1,12 @@
 """
 Notebook sync: a page that fails to download or transcribe must not mark the
-note as synced, the vault must exist before anything is written, and dated
-notebook names must parse to real dates.
+note as synced, the vault must exist before anything is written, dated
+notebook names must parse to real dates, and a journal entry must stay on
+its day instead of following its last edit.
 """
 
 import uuid as uuidlib
+from datetime import datetime
 
 import pytest
 
@@ -155,3 +157,91 @@ def test_is_date_str_day_first_resolves_ambiguous_dates(config):
     engine = SyncEngine(config, client=FakeClient(), ocr=FakeOCR())
     assert engine.is_date_str("04-05-2026") == "2026-05-04"
     assert engine.is_date_str("04-13-2026") == "2026-04-13"
+
+
+# --- Journal dates -----------------------------------------------------------
+
+def ms(day, hour=12):
+    """Epoch milliseconds for September `day`, 2026, local time."""
+    return int(datetime(2026, 9, day, hour).timestamp() * 1000)
+
+
+def daily(vault, day):
+    return vault.daily_dir / "September" / f"2026-09-{day:02d}.md"
+
+
+def journal_item(name="Morning thoughts", created=2, modified=5):
+    return {"uuid": str(uuidlib.uuid4()), "name": name,
+            "createTime": ms(created), "lastModifiedTime": ms(modified)}
+
+
+@pytest.fixture
+def journal_engine(config, vault):
+    config.create_missing_daily_notes = True
+    return SyncEngine(config, client=FakeClient(), ocr=FakeOCR(), vault=vault)
+
+
+def test_undated_journal_stays_on_its_first_day_when_edited(journal_engine, vault):
+    item = journal_item(created=2, modified=5)
+    assert journal_engine.sync_notebook(item, "Paper/Journals")
+    assert item["uuid"] in daily(vault, 2).read_text(encoding="utf-8")
+    assert not daily(vault, 5).exists()  # creation date, not last-modified
+
+    item["lastModifiedTime"] = ms(7)  # edited on the 7th
+    assert journal_engine.sync_notebook(item, "Paper/Journals")
+
+    assert item["uuid"] in daily(vault, 2).read_text(encoding="utf-8")
+    assert not daily(vault, 7).exists()
+    assert load_sync_state()["notes"][item["uuid"]]["journal_date"] == "2026-09-02"
+
+
+def test_renaming_a_dated_notebook_moves_its_block(journal_engine, vault):
+    item = journal_item(name="2026-09-02")
+    journal_engine.sync_notebook(item, "Paper/Journals")
+    old = daily(vault, 2)
+    old.write_text(old.read_text(encoding="utf-8") + "\nmy own notes\n", encoding="utf-8")
+
+    item.update(name="2026-09-03", lastModifiedTime=ms(8))
+    journal_engine.sync_notebook(item, "Paper/Journals")
+
+    assert item["uuid"] in daily(vault, 3).read_text(encoding="utf-8")
+    old_text = old.read_text(encoding="utf-8")
+    assert item["uuid"] not in old_text
+    assert "my own notes" in old_text
+
+
+def test_copies_left_by_older_versions_are_cleaned_up(journal_engine, vault):
+    item = journal_item(created=2, modified=6)
+    uuid = item["uuid"]
+    heading = vault.config.daily_heading
+    # What the old last-modified behavior left behind: a copy on each edit
+    # day, one with a tasks callout, one sharing the day with another notebook.
+    for day, other in ((5, None), (6, "other-notebook")):
+        content = f"## Landing\nuser text {day}\n\n{heading}\n"
+        content = vault.inject_journal_section(content, heading, uuid, f"old copy {day}")
+        content = vault.inject_tasks_section(content, heading, uuid, ["stale task"])
+        if other:
+            content = vault.inject_journal_section(content, heading, other, "keep me")
+        daily(vault, day).parent.mkdir(parents=True, exist_ok=True)
+        daily(vault, day).write_text(content + "\n## Check-ins\n", encoding="utf-8")
+
+    journal_engine.sync_notebook(item, "Paper/Journals")
+
+    assert uuid in daily(vault, 2).read_text(encoding="utf-8")
+    for day in (5, 6):
+        text = daily(vault, day).read_text(encoding="utf-8")
+        assert uuid not in text and "stale task" not in text
+        assert f"user text {day}" in text and "## Check-ins" in text
+        assert "viwoods:tasks-start" not in text  # emptied tasks region dropped
+    assert "keep me" in daily(vault, 6).read_text(encoding="utf-8")
+
+
+def test_moving_a_notebook_out_of_the_journal_folder_removes_its_block(journal_engine, vault):
+    item = journal_item(created=2, modified=5)
+    journal_engine.sync_notebook(item, "Paper/Journals")
+
+    item["lastModifiedTime"] = ms(9)
+    journal_engine.sync_notebook(item, "Paper/Ideas")
+
+    assert item["uuid"] not in daily(vault, 2).read_text(encoding="utf-8")
+    assert "journal_date" not in load_sync_state()["notes"][item["uuid"]]

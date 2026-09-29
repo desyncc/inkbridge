@@ -10,7 +10,7 @@ from .config import Config
 from .jsonstore import read_json, update_json
 from .paths import data_path
 from .ocr import OCREngine, OCRError
-from .vault import ObsidianVault
+from .vault import ObsidianVault, _to_date_str
 
 STATE_FILE = data_path("sync_state.json")
 LOCAL_CACHE_DIR = data_path("cache")
@@ -273,24 +273,35 @@ class SyncEngine:
         # 2. Check if this is a Journal entry that should inject into 10 - Journals
         date_str = self.is_date_str(note_name)
         is_in_journal_folder = "journal" in rel_folder_path.lower()
+        previous_date = note_state.get("journal_date")
+        journal_date = None
         if date_str or is_in_journal_folder:
-            target_date = date_str
-            if not target_date:
-                # Try inferring from creation/update time
-                ctime = detail.get("lastModifiedTime") or item.get("createdAt")
-                if ctime:
-                    try:
-                        target_date = datetime.fromtimestamp(ctime / 1000).strftime("%Y-%m-%d")
-                    except Exception:
-                        pass
+            # A date in the name wins, so renaming a notebook moves it. An
+            # undated journal keeps the day it was first synced to, falling
+            # back to its creation date: last-modified time would move the
+            # entry to whichever day it was last edited.
+            journal_date = (
+                date_str
+                or previous_date
+                or _to_date_str(metadata.get("created_time"))
+                or _to_date_str(item.get("lastModifiedTime") or detail.get("lastModifiedTime"))
+            )
 
-            if target_date:
-                if progress_cb:
-                    progress_cb(f"Injecting into daily journal for {target_date}...", 0.95)
-                self.vault.sync_daily_journal(
-                    target_date, pages_data, raw_meta=detail, note_uuid=uuid,
-                    inferred_tasks=metadata.get("inferred_tasks")
-                )
+        written = None
+        if journal_date:
+            if progress_cb:
+                progress_cb(f"Injecting into daily journal for {journal_date}...", 0.95)
+            written = self.vault.sync_daily_journal(
+                journal_date, pages_data, raw_meta=detail, note_uuid=uuid,
+                inferred_tasks=metadata.get("inferred_tasks")
+            )
+
+        # The block moved (renamed notebook, moved out of the journal folder)
+        # or was synced before journal_date was tracked, when edits scattered
+        # copies across days: remove it from every other daily note.
+        if journal_date != previous_date and (journal_date or previous_date):
+            for stale in self.vault.remove_journal_block_elsewhere(uuid, keep=written):
+                print(f"Removed an outdated copy of '{note_name}' from {stale.name}")
 
         # Flush per notebook: bounded loss on a crash, no O(pages^2) rewrites.
         self.ocr.flush_cache()
@@ -317,6 +328,8 @@ class SyncEngine:
             "total_pages": total_pages,
             "synced_at": datetime.now().isoformat()
         }
+        if journal_date:
+            self.state["notes"][uuid]["journal_date"] = journal_date
         self._dirty_notes.add(uuid)
         self._save_state()
 
@@ -472,7 +485,7 @@ class SyncEngine:
 
         self.planned = []
         self.incomplete = []
-        self.vault.skipped_dates.clear()
+        self.vault.begin_run()
         wanted = set(app_types) if app_types is not None else None
 
         # Refresh device info
@@ -590,7 +603,7 @@ class SyncEngine:
         """Syncs a single folder subtree instead of everything."""
         self.vault.require_exists()
         self.incomplete = []
-        self.vault.skipped_dates.clear()
+        self.vault.begin_run()
         location = self.find_resource_location(app_type, resource_id)
         if location:
             folder_name, rel_path = location["name"], location["rel_path"]
@@ -642,7 +655,7 @@ class SyncEngine:
 
         self.planned = []
         self.incomplete = []
-        self.vault.skipped_dates.clear()
+        self.vault.begin_run()
         items = self.list_journal_items()
         if not items:
             return 0

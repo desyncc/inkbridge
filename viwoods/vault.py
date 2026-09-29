@@ -93,6 +93,37 @@ def _remove_note_block(section: str, uuid: str) -> str:
     return (section[:start_idx] + section[end_idx + len(end_marker):]).strip("\n")
 
 
+# Finds every notebook sub-block in a daily note, current or legacy form.
+_NOTE_MARKER_RE = re.compile(r"(?:%% viwoods:note|<!--\s*viwoods:note)\s+(\S+?)\s*(?:%%|-->)")
+
+
+def _remove_from_region(content: str, start: str, end: str, uuid: str, drop_if_empty: bool) -> str:
+    """
+    Removes `uuid`'s sub-block from the region between `start` and `end`,
+    leaving the rest of the note byte-for-byte alone. An emptied region is
+    dropped entirely when `drop_if_empty` (the tasks region), otherwise its
+    markers stay in place (the transcript region, which sits under the
+    user's own heading).
+    """
+    s_idx = content.find(start)
+    if s_idx == -1:
+        return content
+    e_idx = content.find(end, s_idx + len(start))
+    if e_idx == -1:
+        return content
+    section = content[s_idx + len(start):e_idx]
+    if _note_start_marker(uuid) not in section:
+        return content
+
+    new_section = re.sub(r"\n{3,}", "\n\n", _remove_note_block(section, uuid))
+    before, after = content[:s_idx], content[e_idx + len(end):]
+    if not new_section.strip():
+        if drop_if_empty:
+            return before + after.lstrip("\n")
+        return before + start + "\n" + end + after
+    return before + start + "\n" + new_section + "\n" + end + after
+
+
 def _to_date_str(value: Any) -> Optional[str]:
     """Best-effort YYYY-MM-DD from an epoch (s or ms) or a timestamp string."""
     if isinstance(value, bool) or value in (None, "", 0):
@@ -146,6 +177,13 @@ class ObsidianVault:
         # Dates whose daily note didn't exist and wasn't created
         # (create_missing_daily_notes off), for the sync to report once.
         self.skipped_dates: set = set()
+        # uuid -> daily notes holding its sub-block, built on first use per run.
+        self._block_index: Optional[Dict[str, set]] = None
+
+    def begin_run(self) -> None:
+        """Resets the per-sync bookkeeping; call at the start of each sync."""
+        self.skipped_dates.clear()
+        self._block_index = None
 
         # Directories are created at write time (save_attachment,
         # mirror_notebook, sync_daily_journal), not here: instantiating the
@@ -462,6 +500,60 @@ class ObsidianVault:
             block + "\n" + VIWOODS_TASKS_END + "\n" + rest.lstrip("\n")
         )
 
+    def _iter_daily_notes(self, pattern: str = "????-??-??.md"):
+        """
+        Yields the daily-note files below daily_dir, skipping the mirror
+        folder and hidden folders (.obsidian, .trash): a mirrored notebook
+        named by date is not a daily note.
+        """
+        if not self.daily_dir.is_dir():
+            return
+        mirror = self.mirror_dir.resolve()
+        for path in sorted(self.daily_dir.rglob(pattern)):
+            rel_parts = path.relative_to(self.daily_dir).parts[:-1]
+            if any(part.startswith(".") for part in rel_parts):
+                continue
+            if path.resolve().is_relative_to(mirror):
+                continue
+            if path.is_file():
+                yield path
+
+    def remove_journal_block_elsewhere(self, uuid: str, keep: Optional[Path] = None) -> List[Path]:
+        """
+        Removes `uuid`'s sub-blocks (transcript and tasks) from every daily
+        note except `keep`, so a notebook whose journal date changed doesn't
+        leave a stale copy on the old day. Returns the notes it changed.
+        """
+        if self._block_index is None:
+            self._block_index = {}
+            for path in self._iter_daily_notes():
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                for found in _NOTE_MARKER_RE.findall(text):
+                    self._block_index.setdefault(found, set()).add(path)
+
+        keep_resolved = keep.resolve() if keep else None
+        changed = []
+        for path in sorted(self._block_index.get(uuid, set())):
+            if keep_resolved and path.resolve() == keep_resolved:
+                continue
+            raw = path.read_bytes()
+            newline = "\r\n" if b"\r\n" in raw else "\n"
+            content = _normalize_legacy_markers(raw.decode("utf-8").replace("\r\n", "\n"))
+            new_content = _remove_from_region(
+                content, VIWOODS_TASKS_START, VIWOODS_TASKS_END, uuid, drop_if_empty=True)
+            new_content = _remove_from_region(
+                new_content, VIWOODS_START, VIWOODS_END, uuid, drop_if_empty=False)
+            if new_content != content:
+                with open(path, "w", encoding="utf-8", newline=newline) as f:
+                    f.write(new_content)
+                changed.append(path)
+
+        self._block_index[uuid] = {keep} if keep else set()
+        return changed
+
     def find_daily_note(self, date_str: str) -> Optional[Path]:
         """
         Finds the existing daily note for `date_str`: <daily>/<Month>/, then
@@ -482,18 +574,7 @@ class ObsidianVault:
             if candidate.is_file():
                 return candidate
 
-        if not self.daily_dir.is_dir():
-            return None
-        mirror = self.mirror_dir.resolve()
-        for path in sorted(self.daily_dir.rglob(filename)):
-            rel_parts = path.relative_to(self.daily_dir).parts[:-1]
-            if any(part.startswith(".") for part in rel_parts):
-                continue
-            if path.resolve().is_relative_to(mirror):
-                continue
-            if path.is_file():
-                return path
-        return None
+        return next(self._iter_daily_notes(filename), None)
 
     def sync_daily_journal(
         self,

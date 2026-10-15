@@ -1,0 +1,26 @@
+# A systemd *user* unit that keeps InkBridge syncing in the background.
+#
+#   cp contrib/inkbridge.service ~/.config/systemd/user/
+#   $EDITOR ~/.config/systemd/user/inkbridge.service     # set the two paths below
+#   systemctl --user daemon-reload && systemctl --user enable --now inkbridge
+#   journalctl --user -u inkbridge -f
+#
+# Set "gpu_busy_limit" (and, if you like, "ollama_keep_alive") in ~/.viwoods/config.json so a
+# sync waits while a game has the GPU instead of loading the model over it.
+[Unit]
+Description=InkBridge: sync the Viwoods tablet into Obsidian
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/inkbridge
+ExecStart=%h/inkbridge/.venv/bin/python companion.py daemon --interval 360
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=60
+# Don't compete with the foreground for CPU or disk while the model works.
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target

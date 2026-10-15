@@ -37,6 +37,21 @@ class OCREngine:
         self._warned: set = set()
         self.tag_cache = read_json(TAG_CACHE_FILE, {})
         self.task_cache = read_json(TASK_CACHE_FILE, {})
+        # Set by bulk syncs (the daemon, the dashboard's sync): wait for a quiet GPU before each
+        # local-model call. Left False for a page the user asked to transcribe by hand.
+        self.hold_for_gpu = False
+
+    def _gpu_gate(self) -> None:
+        limit = int(getattr(self.config, "gpu_busy_limit", 0) or 0)
+        if self.hold_for_gpu and limit > 0:
+            from .gpuguard import wait_until_quiet
+            wait_until_quiet(limit)
+
+    def _keep_alive(self, payload: dict) -> dict:
+        keep = getattr(self.config, "ollama_keep_alive", "") or ""
+        if keep:
+            payload["keep_alive"] = keep
+        return payload
 
     def _warn_once(self, key: str, message: str) -> None:
         """Prints a configuration error once per process, not once per page."""
@@ -337,6 +352,7 @@ class OCREngine:
 
     def _chat_ollama(self, prompt: str) -> str:
         """Text-only Ollama chat call, used for tag inference."""
+        self._gpu_gate()
         url = f"{self.config.ollama_url.rstrip('/')}/api/chat"
         payload = {
             "model": self.config.ollama_model,
@@ -345,6 +361,7 @@ class OCREngine:
             "think": getattr(self.config, "ollama_think", False),
             "options": self._ollama_options(temperature=0.2)
         }
+        self._keep_alive(payload)
         timeout = 600.0 if getattr(self.config, "ollama_think", False) else 120.0
         with httpx.Client(timeout=timeout) as client:
             resp = client.post(url, json=payload)
@@ -354,6 +371,7 @@ class OCREngine:
 
     def _chat_lmstudio(self, prompt: str) -> str:
         """Text-only OpenAI-compatible chat call, used for tag inference."""
+        self._gpu_gate()
         url = f"{self.config.lmstudio_url.rstrip('/')}/chat/completions"
         payload = {
             "model": self.config.lmstudio_model,
@@ -482,6 +500,7 @@ if ($engine -eq $null) {{
 
     def _transcribe_lmstudio(self, image_path: str, context: str = "") -> str:
         """Transcribes image using local LM Studio / OpenAI-compatible Vision API."""
+        self._gpu_gate()
         with open(image_path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode("utf-8")
 
@@ -516,6 +535,7 @@ if ($engine -eq $null) {{
 
     def _transcribe_ollama(self, image_path: str, context: str = "") -> str:
         """Transcribes image using local Ollama Vision API (e.g. qwen3.5:9b)."""
+        self._gpu_gate()
         try:
             from PIL import Image
             import io
@@ -564,6 +584,7 @@ if ($engine -eq $null) {{
             "think": getattr(self.config, "ollama_think", False),
             "options": self._ollama_options(temperature=0.1)
         }
+        self._keep_alive(payload)
 
         # Thinking models can take several minutes to reason through a page
         # before answering; the non-thinking timeout would cut them off.

@@ -217,6 +217,7 @@ def cmd_serve(port=8765, host="127.0.0.1", open_browser=True):
 def cmd_daemon(interval=30, max_backoff_minutes=240):
     cfg = load_config()
     engine = SyncEngine(cfg)
+    engine.ocr.hold_for_gpu = True      # gpu_busy_limit: wait for a quiet GPU before model calls
     print(f"\n[InkBridge] Starting background daemon (sync every {interval} minutes)...")
     print("Press Ctrl+C to stop.\n")
 

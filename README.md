@@ -191,6 +191,8 @@ default:
 | `lmstudio_url`, `lmstudio_model` | OpenAI-compatible vision endpoint and model. |
 | `ollama_url`, `ollama_model` | Ollama endpoint and vision model. |
 | `ollama_think` | Pass `think` to Ollama for reasoning models. |
+| `ollama_keep_alive` | How long Ollama keeps the model in memory after a call, as an Ollama duration (`"30s"`, `"5m"`, `"0"` = unload at once). Empty leaves Ollama's default (5 minutes). |
+| `gpu_busy_limit` | A sync (the daemon, or one started from the dashboard) waits while the GPU's utilisation is at or above this percent, so a background run doesn't compete with a game. `0` never waits. AMD GPUs only (read from sysfs `gpu_busy_percent`); where it can't be read it never blocks. A page you transcribe by hand in the dashboard is not held. |
 | `infer_tags` | Ask the active OCR engine's model to suggest Obsidian tags from a notebook's transcribed text, added to that note's `tags:` frontmatter alongside `viwoods`/`notebook`. One extra text-only call per notebook (skipped if there's no transcript); results are cached per engine/model/content like transcripts are, and cleared by `--force`. Daily journal notes are never touched — only the mirrored notebook file's own frontmatter. |
 | `max_inferred_tags` | Cap on how many tags `infer_tags` adds per notebook. |
 | `infer_tasks` | Ask the active OCR engine's model to pull action items out of a notebook's transcribed text into a "Viwoods Tasks" callout, injected under the same heading as the transcript. One extra text-only call per notebook (skipped if there's no transcript); cached per engine/model/content like transcripts are. An empty result removes the callout instead of leaving an empty one. |
@@ -284,6 +286,10 @@ python companion.py export 0d7e25d2-4f39-4122-affa-ea02704a5637 --format zip
 python companion.py daemon --interval 30
 ```
 Checks for new or modified notebooks every 30 minutes. A failed sync is logged and retried with exponential backoff instead of killing the daemon.
+
+To keep it running without a terminal, install it as a systemd user service with
+[`contrib/inkbridge.service`](contrib/inkbridge.service) (the commands are in its header). With
+`gpu_busy_limit` set, a sync waits while a game has the GPU.
 
 ---
 

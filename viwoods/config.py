@@ -60,6 +60,13 @@ class Config(BaseModel):
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3.5:9b"
     ollama_think: bool = False
+    # How long Ollama keeps the model in memory after a call, as an Ollama duration ("30s", "5m",
+    # "0" = unload at once). "" leaves Ollama's own default (5 minutes).
+    ollama_keep_alive: str = ""
+    # Syncs (the daemon, and any sync started from the dashboard) wait while the GPU's utilisation
+    # is at or above this percent, so they don't compete with a game. 0 = never wait. AMD only
+    # (sysfs gpu_busy_percent); elsewhere it never blocks.
+    gpu_busy_limit: int = 0
 
     # Auto-tagging: asks the active OCR engine's model to suggest Obsidian
     # tags from a notebook's transcribed text. Off by default since it adds

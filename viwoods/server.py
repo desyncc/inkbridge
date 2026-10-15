@@ -407,6 +407,7 @@ def _claim_sync_slot(message: str = "Initializing sync...") -> bool:
 def run_sync_task(scope: str, force: bool, resource_id: str = "", app_type: int = 1) -> None:
     """Runs a sync and publishes its progress. The slot must already be claimed."""
     engine = get_engine()
+    engine.ocr.hold_for_gpu = True      # gpu_busy_limit: a sync waits for a quiet GPU
 
     def on_progress(msg: str, pct: float):
         sync_status["message"] = msg

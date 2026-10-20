@@ -4,7 +4,16 @@ services:
     image: inkbridge
     restart: unless-stopped
     ports:
-      - "8765:8765"
+      # Published on the server's own loopback address only: the dashboard
+      # holds your Viwoods token and has no login. Reach it from your desktop
+      # through an SSH tunnel (ssh -L 8765:localhost:8765 your-server, then
+      # open http://localhost:8765). To open it to your network instead,
+      # change this to "8765:8765" and set VIWOODS_ALLOWED_HOSTS below.
+      - "127.0.0.1:8765:8765"
+    # environment:
+    #   # Names/addresses you'll type in the browser to reach the dashboard
+    #   # from other machines (localhost and 127.0.0.1 always work).
+    #   VIWOODS_ALLOWED_HOSTS: "my-server.local,192.168.1.20"
     volumes:
       # Config, sync state, OCR cache, downloaded page scans - persists
       # across container recreation. Contains your Viwoods token.

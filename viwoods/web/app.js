@@ -134,7 +134,8 @@ const SETTINGS_FIELDS = {
 // field means "leave the stored value alone", not "clear it".
 const SECRET_FIELDS = {
   cfgGeminiKey: "gemini_api_key",
-  cfgToken: "token"
+  cfgToken: "token",
+  cfgNotifyUrl: "notify_url"
 };
 
 async function loadSettings() {

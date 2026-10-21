@@ -9,7 +9,7 @@ import time
 from typing import Any, Dict, List, Optional
 import httpx
 
-from .config import Config, NO_TOKEN_MESSAGE
+from .config import Config, NO_TOKEN_MESSAGE, save_token
 
 TOKEN_EXPIRED_MESSAGE = "Viwoods token expired. Run `python companion.py login` or paste a new one in Settings."
 
@@ -25,9 +25,13 @@ class AuthError(RuntimeError):
 
 
 def _is_auth_failure(code: Any, message: str) -> bool:
+    lowered = (message or "").lower()
+    # The API answers 401 "Incorrect signature" when it rejects how a request was signed. That is
+    # not a sign-in problem, and renewing the token won't fix it.
+    if "signature" in lowered:
+        return False
     if str(code) in AUTH_ERROR_CODES:
         return True
-    lowered = (message or "").lower()
     return any(hint in lowered for hint in _AUTH_ERROR_HINTS)
 
 
@@ -67,6 +71,24 @@ def decode_gzip_b64(b64_str: str) -> Any:
             return json.loads(b64_str)
         except Exception:
             return b64_str
+
+
+RENEW_COOLDOWN_SECONDS = 60
+
+
+def token_expiry(token: str) -> Optional[float]:
+    """When a JWT expires (epoch seconds), or None if `token` isn't a JWT with an exp claim."""
+    parts = (token or "").split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+        exp = claims.get("exp")
+    except Exception:
+        return None
+    if isinstance(exp, bool) or not isinstance(exp, (int, float)):
+        return None
+    return exp / 1000 if exp > 1e11 else float(exp)
 
 
 def solve_slider_captcha():
@@ -137,6 +159,7 @@ class ViwoodsClient:
     def __init__(self, config: Config):
         self.config = config
         self.http = httpx.Client(timeout=30.0)
+        self._renew_failed_at: Optional[float] = None
 
     def _headers(self, data: Dict[str, Any]) -> Dict[str, str]:
         sign = sign_data(data, self.config.secret_key)
@@ -155,7 +178,20 @@ class ViwoodsClient:
         return headers
 
     def post(self, uri_path: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Makes an authenticated, signed POST request to the Viwoods Cloud API."""
+        """
+        Makes an authenticated, signed POST request to the Viwoods Cloud API. If the token is
+        rejected it is renewed once and the request retried, so an expiring sign-in doesn't
+        stop a sync.
+        """
+        try:
+            return self._post_once(uri_path, data)
+        except AuthError:
+            signing_in = uri_path.rstrip("/").endswith(("user/login", "user/refreshLogin"))
+            if signing_in or not self.config.token or not self._renew_token():
+                raise
+            return self._post_once(uri_path, data)
+
+    def _post_once(self, uri_path: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if not self.config.token and not uri_path.rstrip("/").endswith("user/login"):
             raise AuthError(NO_TOKEN_MESSAGE)
 
@@ -181,6 +217,44 @@ class ViwoodsClient:
 
         return res_json
 
+    def _renew_token(self) -> bool:
+        """
+        Swaps the current token for a fresh one and saves it. Returns whether that worked. After
+        a failure it doesn't try again for a minute, so a sync full of rejected requests makes
+        one attempt, not hundreds.
+        """
+        now = time.monotonic()
+        if self._renew_failed_at is not None and now - self._renew_failed_at < RENEW_COOLDOWN_SECONDS:
+            return False
+
+        token = None
+        try:
+            data = self._post_once("api/v1/user/refreshLogin", {}).get("data")
+            if isinstance(data, dict):
+                token = data.get("token")
+        except Exception:
+            pass
+
+        if not token:
+            self._renew_failed_at = now
+            return False
+
+        self._renew_failed_at = None
+        self.config.token = token
+        try:
+            save_token(token)
+        except Exception as e:
+            print(f"Warning: renewed the Viwoods token but could not save it ({e}); "
+                  f"run `companion.py login` if syncs start failing.")
+        return True
+
+    def refresh_if_expiring(self, within_days: int = 30) -> bool:
+        """Renews the token when it expires within `within_days`. True if it was renewed."""
+        expires = token_expiry(self.config.token)
+        if expires is None or expires - time.time() > within_days * 86400:
+            return False
+        return self._renew_token()
+
     def login(self, email: str, password: str) -> str:
         """Logs into Viwoods Cloud using email and password with simulated slider verification."""
         captcha = solve_slider_captcha()
@@ -198,12 +272,9 @@ class ViwoodsClient:
         return token
 
     def refresh_token(self) -> str:
-        """Refreshes the active session JWT token."""
-        res = self.post("api/v1/user/refreshLogin", {})
-        token = res.get("data", {}).get("token")
-        if token:
-            self.config.token = token
-            return token
+        """Renews the session token (and saves it); returns the token now in use."""
+        self._renew_failed_at = None
+        self._renew_token()
         return self.config.token
 
     def get_devices(self) -> List[Dict[str, Any]]:

@@ -2,7 +2,7 @@ import json
 from typing import Optional
 from pydantic import BaseModel, ValidationError
 
-from .jsonstore import write_json_atomic
+from .jsonstore import update_json, write_json_atomic
 from .paths import data_path, restrict_permissions
 
 CONFIG_PATH = data_path("config.json")
@@ -94,6 +94,11 @@ class Config(BaseModel):
     # asks for confirmation (sync --confirm-deletions) instead. It guards
     # against a bad listing from the cloud or a wrong account. 0 = no check.
     max_deletions_per_sync: int = 10
+    # Where an unattended sync (the daemon, the dashboard's auto-sync) sends an alert when it
+    # needs you: an expired sign-in, a missing vault, repeated failures, deletions held back.
+    # An ntfy topic URL (https://ntfy.sh/your-secret-topic) or a Discord/Slack webhook. It is
+    # a secret: anyone with a public ntfy topic's name can read it. Empty = no alerts.
+    notify_url: str = ""
 
 
 # Gemini models Google has shut down, which InkBridge once used as its
@@ -156,6 +161,16 @@ def load_config() -> Config:
             f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in e.errors()
         )
         raise ConfigError(f"{CONFIG_PATH} has invalid settings: {problems}") from e
+
+
+def save_token(token: str) -> None:
+    """
+    Writes just the token into config.json, leaving every other setting as it is on disk. A
+    long-running process holds an older copy of the config, so saving all of it would undo
+    edits made since it started.
+    """
+    if CONFIG_PATH.exists():
+        update_json(CONFIG_PATH, lambda data: data.update(token=token))
 
 
 def save_config(cfg: Config) -> None:

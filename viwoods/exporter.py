@@ -17,11 +17,22 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 from .config import Config, load_config
+from .paths import data_path, is_installed
 from .sync import LOCAL_CACHE_DIR
 from .client import ViwoodsClient
 from .vault import ObsidianVault
 
-DEFAULT_EXPORT_DIR = Path(__file__).resolve().parent.parent / "exports"
+def default_export_dir(package_parent: Optional[Path] = None) -> Path:
+    """
+    `exports/` beside the code in a checkout (and /app/exports in the Docker image), but in the
+    data directory for a pip/pipx install: the code then sits in site-packages, which is no
+    place to write files.
+    """
+    parent = package_parent or Path(__file__).resolve().parent.parent
+    return data_path("exports") if is_installed(parent) else parent / "exports"
+
+
+DEFAULT_EXPORT_DIR = default_export_dir()
 
 # Helvetica, ReportLab's default, is Latin-1 only: a transcript with CJK,
 # Greek, or symbols renders as black boxes. Any of these families fixes that.

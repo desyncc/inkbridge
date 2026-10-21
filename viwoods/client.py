@@ -10,8 +10,11 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from .config import Config, NO_TOKEN_MESSAGE, save_token
+from .paths import command
 
-TOKEN_EXPIRED_MESSAGE = "Viwoods token expired. Run `python companion.py login` or paste a new one in Settings."
+TOKEN_EXPIRED_MESSAGE = (
+    f"Viwoods token expired. Run `{command('login')}` or paste a new one in Settings."
+)
 
 # Viwoods API result codes that mean "log in again".
 AUTH_ERROR_CODES = {"401", "403", "1001", "4001", "10001"}
@@ -245,7 +248,7 @@ class ViwoodsClient:
             save_token(token)
         except Exception as e:
             print(f"Warning: renewed the Viwoods token but could not save it ({e}); "
-                  f"run `companion.py login` if syncs start failing.")
+                  f"run `{command('login')}` if syncs start failing.")
         return True
 
     def refresh_if_expiring(self, within_days: int = 30) -> bool:

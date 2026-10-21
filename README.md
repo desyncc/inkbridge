@@ -46,7 +46,11 @@ It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transc
 
 ## 🚀 Quick Start
 
-A first run, start to finish. After `cd inkbridge` in step 1, every command runs from that folder.
+A first run, start to finish.
+
+> **Quickest install:** with [pipx](https://pipx.pypa.io), `pipx install git+https://github.com/desyncc/inkbridge.git` gives you an `inkbridge` command that works from any folder. Everywhere below, read `python companion.py <command>` as `inkbridge <command>`, and skip step 1. Update later with `pipx upgrade inkbridge`.
+
+Otherwise, after `cd inkbridge` in step 1, every command runs from that folder.
 
 1. **Install InkBridge** (Python 3.10 or newer):
 
@@ -88,7 +92,13 @@ A first run, start to finish. After `cd inkbridge` in step 1, every command runs
 
    Then, in the dashboard's Settings tab, set the **Obsidian Vault Path**: the full path of your vault folder, e.g. `/home/you/Obsidian` or `C:/Users/You/Obsidian`. Sync won't run until this points at a real folder. (The Settings tab can also take a token or a login, if you'd rather do it all there.)
 
-5. **Check the connection:**
+5. **Check that everything works:**
+
+   ```bash
+   python companion.py doctor
+   ```
+
+   It checks your Python and packages, the Viwoods sign-in, the vault, and the OCR engine (that Ollama is running and has its model), and says how to fix anything that isn't right.
 
    ```bash
    python companion.py status
@@ -244,6 +254,12 @@ python companion.py login --email you@example.com
 python companion.py login --token      # paste a token copied from the browser
 ```
 Stores the token InkBridge uses to talk to Viwoods. InkBridge renews it by itself: when Viwoods rejects it, and ahead of time when it's within a month of expiring. If a renewal ever fails, run `login` again (you'll be [alerted](#-alerts) if you've set `notify_url`). The password is only typed at the hidden prompt, never taken as an argument (it would end up in your shell history) and never saved. Under Docker: `docker compose exec -it viwoods python companion.py login`.
+
+### Diagnose Problems
+```bash
+python companion.py doctor
+```
+Checks, in order: Python and its packages, `config.json`, the Viwoods sign-in (and when the token expires), the Obsidian vault (exists, writable, looks like a vault), the OCR engine (Ollama or LM Studio running with the configured model, a Gemini key set, or Windows OCR available), alerts, and how the last sync went. Each problem comes with the command that fixes it, and it exits non-zero if anything is broken. The report contains no token, key or alert address and shows your home folder as `~`, so it's safe to paste into a bug report. Under Docker: `docker compose exec viwoods python companion.py doctor`.
 
 ### Check Status & Device Connection
 ```bash

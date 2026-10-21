@@ -16,12 +16,35 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from viwoods import health
-from viwoods.config import NO_TOKEN_MESSAGE, ConfigError, load_config, save_config
-from viwoods.client import AuthError, ViwoodsClient
-from viwoods.ocr import OCREngine
-from viwoods.vault import ObsidianVault, VaultNotFoundError
-from viwoods.sync import SyncEngine
+
+def missing_dependency_message(error: ImportError, executable: str, script_dir: Path) -> str:
+    """
+    Explains a ModuleNotFoundError at startup, which nearly always means the wrong Python: the
+    system one instead of the project's virtual environment.
+    """
+    lines = [f"InkBridge needs the Python packages listed in requirements.txt, and this Python "
+             f"({executable}) doesn't have {error.name or 'one of them'}."]
+    venv_python = script_dir / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    if venv_python.exists():
+        lines.append(f"This folder has a virtual environment. Run InkBridge with it instead:\n"
+                     f"    {venv_python} {Path(sys.argv[0]).name} {' '.join(sys.argv[1:])}".rstrip())
+    else:
+        lines.append("Install them (inside a virtual environment is best):\n"
+                     "    python -m pip install -r requirements.txt")
+    lines.append("Or install InkBridge with pipx, which sets this up for you:  pipx install .")
+    return "\n".join(lines)
+
+
+try:
+    from viwoods import doctor, health
+    from viwoods.config import NO_TOKEN_MESSAGE, ConfigError, load_config, save_config
+    from viwoods.client import AuthError, ViwoodsClient
+    from viwoods.ocr import OCREngine
+    from viwoods.paths import command
+    from viwoods.vault import ObsidianVault, VaultNotFoundError
+    from viwoods.sync import SyncEngine
+except ModuleNotFoundError as _error:
+    sys.exit("\n[ERROR] " + missing_dependency_message(_error, sys.executable, Path(__file__).resolve().parent) + "\n")
 
 
 def cmd_status():
@@ -114,10 +137,10 @@ def cmd_login(email: str = None, use_token: bool = False):
         d = devices[0]
         print(f"Signed in. Connected to {d.get('modelName')} (SN: {d.get('machineNumber')}).")
     elif devices is None:
-        print("Signed in. (Could not list your tablets just now; run `companion.py status` to check.)")
+        print(f"Signed in. (Could not list your tablets just now; run `{command('status')}` to check.)")
     else:
         print("Signed in, but no tablet is registered to this account yet.")
-    print("Your token is saved. Next: set your vault path, then `python companion.py sync --dry-run`.")
+    print(f"Your token is saved. Next: set your vault path, then `{command('sync --dry-run')}`.")
 
 
 def _login_failed(message: str):
@@ -200,7 +223,7 @@ def _print_held_back(held):
         print("   library), which usually means a wrong account or a bad response, not real deletions:")
         for note in held:
             print(f"     - {note['folder']}/{note['name']}")
-        print("   If they really are deleted, run:  python companion.py sync --confirm-deletions")
+        print(f"   If they really are deleted, run:  {command('sync --confirm-deletions')}")
 
 
 def _print_incomplete(names):
@@ -324,6 +347,14 @@ def _daemon_cycle(engine, interval, failures, max_backoff_minutes=240):
         return wait_minutes, failures
 
 
+def cmd_doctor():
+    """Checks the install end to end and says how to fix what's wrong."""
+    checks = doctor.run_checks()
+    print(doctor.render(checks))
+    if doctor.has_failures(checks):
+        sys.exit(1)
+
+
 def cmd_test_notify():
     """Sends a test message to notify_url, so you know alerts will reach you."""
     cfg = load_config()
@@ -376,7 +407,7 @@ def cmd_export(query=None, fmt="pdf", output_dir=None, list_notes=False):
             uuid_short = f" ({n['uuid'][:8]}...)" if n.get("uuid") else ""
             print(f"  - {n['title']}{uuid_short}")
         print("\n" + "=" * 65)
-        print("Usage: python companion.py export \"<Title>\" [--format pdf|html|zip] [--output <dir>]\n")
+        print(f"Usage: {command('export')} \"<Title>\" [--format pdf|html|zip] [--output <dir>]\n")
         return
 
     fmt = fmt.lower()
@@ -449,6 +480,9 @@ def main():
     p_login.add_argument("--token", dest="use_token", action="store_true",
                          help="Paste a token copied from the browser instead of signing in with a password")
 
+    # doctor
+    subparsers.add_parser("doctor", help="Check this install and say how to fix any problem")
+
     # test-notify
     subparsers.add_parser("test-notify", help="Send a test alert to notify_url")
 
@@ -485,6 +519,8 @@ def _dispatch(args):
         cmd_set_engine(args.engine, model=getattr(args, "model", None), url=getattr(args, "url", None), think=getattr(args, "think", None))
     elif args.command == "login":
         cmd_login(email=args.email, use_token=args.use_token)
+    elif args.command == "doctor":
+        cmd_doctor()
     elif args.command == "test-notify":
         cmd_test_notify()
     elif args.command == "status":

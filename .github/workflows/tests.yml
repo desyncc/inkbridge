@@ -35,3 +35,26 @@ jobs:
           cache-dependency-path: requirements*.txt
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest
+
+  package:
+    name: installs with pip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build and install the wheel into a clean environment
+        run: |
+          python -m pip install build
+          python -m build --wheel
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install dist/*.whl
+      - name: The command runs, and the dashboard files shipped
+        run: |
+          /tmp/clean/bin/inkbridge --help
+          /tmp/clean/bin/python -c "import pathlib, viwoods; assert (pathlib.Path(viwoods.__file__).parent / 'web' / 'index.html').is_file()"
+      - name: doctor runs on a fresh install (it should find the unconfigured vault)
+        env:
+          VIWOODS_DATA_DIR: /tmp/fresh-data
+        run: /tmp/clean/bin/inkbridge doctor | grep -q "vault_path is still the placeholder"

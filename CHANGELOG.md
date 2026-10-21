@@ -6,6 +6,8 @@ All notable changes to InkBridge are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-21
+
 ### Added
 
 - **Deletes, moves and renames follow the tablet.** A full sync keeps the vault a 1:1 mirror: a
@@ -30,6 +32,10 @@ All notable changes to InkBridge are listed here. The format follows
   dashboard files.
 - Community files: `CONTRIBUTING.md`, `SECURITY.md`, issue forms, a pull request template, and
   Dependabot.
+- **A demo you can run without a tablet.** `python contrib/demo/run_demo.py` starts the dashboard
+  against a pretend Viwoods Cloud and a throwaway vault seeded with ordinary notes, and the README
+  now shows screenshots made from it (the daily note, a mirrored notebook, the dashboard).
+- The dashboard's header shows the installed version instead of a fixed `v1.0`.
 
 ### Changed
 
@@ -45,6 +51,9 @@ All notable changes to InkBridge are listed here. The format follows
 
 ### Fixed
 
+- The README (and a code comment) said the `%% … %%` markers InkBridge writes are hidden in Live
+  Preview. In Obsidian they are invisible in Reading view but shown dimmed in the editor; the docs now
+  say so.
 - Daily app entries whose date the API sends without zero-padding (`2026-10-1`) were never found in
   the vault or recorded, so they were reprocessed on every sync.
 - The API's `401 Incorrect signature` reply was reported as an expired token.
@@ -74,4 +83,5 @@ InkBridge was developed in the open from 2026-09-05 without tagged releases. By 
 
 The full history is in the [commit log](https://github.com/desyncc/inkbridge/commits/main).
 
-[Unreleased]: https://github.com/desyncc/inkbridge/commits/main
+[Unreleased]: https://github.com/desyncc/inkbridge/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/desyncc/inkbridge/releases/tag/v1.1.0

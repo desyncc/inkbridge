@@ -12,6 +12,24 @@ It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transc
 
 ---
 
+## 👀 See it
+
+InkBridge adds to the vault you already have. This demo vault (made-up notes and handwriting, run through the real sync) has a daily note you wrote from your own template, with the handwritten page and its transcription filled in between your sections:
+
+<p align="center"><img src="docs/images/obsidian-daily-note.png" width="820" alt="A daily note in Obsidian: the user's own Landing and Timeline sections, then the handwritten page InkBridge synced, with the vault's folder tree beside it"></p>
+
+Every notebook is also mirrored under `99 - Viwoods/` in the folders you use on the tablet, as a note with the page image, its transcription and some properties:
+
+<p align="center"><img src="docs/images/obsidian-notebook.png" width="820" alt="A mirrored notebook in Obsidian: the handwritten page image above its transcription"></p>
+
+And the dashboard puts the ink beside the extracted text, so you can check a transcription and re-run it:
+
+<p align="center"><img src="docs/images/ocr-studio.png" width="820" alt="The InkBridge dashboard showing a handwritten garden plan beside its transcribed markdown"></p>
+
+*These are generated, not taken from anyone's notebooks. Try it without a tablet: `python contrib/demo/run_demo.py` starts the dashboard against a pretend Viwoods Cloud and a throwaway vault.*
+
+---
+
 ## ✨ Features
 
 - **📂 1:1 Directory Mirroring**: Preserves your tablet's exact folder tree (`Paper`, `Journals`, `Meeting`, `Knowledge Base`, etc.) inside your vault under `99 - Viwoods/`. Move or rename a notebook on the tablet and its note follows; delete one and its note, images and daily-note copies are removed (see `remove_deleted_notebooks`). Deletions are applied by full syncs (`sync`, the dashboard's Sync all / Paper), not by a single-folder or journals-only sync.
@@ -23,7 +41,7 @@ It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transc
   - Targets the heading configured as `daily_heading` (default `# Transcribed text from AiPaper:`), matched on an exact line.
   - Writes only between `%% viwoods:start %%` and `%% viwoods:end %%`. Everything outside those markers — `## 🌅 Landing`, `## 🗓️ Timeline`, `## ✅ Check-ins`, anything else — is left untouched.
   - Each notebook gets its own `%% viwoods:note <uuid> %%` sub-block, so several notebooks can feed the same date and each is updated independently.
-  - Markers use Obsidian's native `%% %%` comment syntax, so they stay hidden in Live Preview, not just Reading view. Notes written before this change carry old `<!-- -->` markers, which are upgraded in place the next time that note is synced.
+  - Markers use Obsidian's native `%% %%` comment syntax: invisible in Reading view, and shown dimmed in the editor, where they mark the part InkBridge owns. Notes written before this change carry old `<!-- -->` markers, which are upgraded in place the next time that note is synced.
   - A note that has the heading but no markers (written by an older version) is migrated on the next sync: the markers are inserted after the heading and the block ends at the next heading of any level or the next `---`.
   - Includes both high-resolution page image embeds and transcribed text.
 - **☑️ Viwoods Daily App Sync**: pulls the tablet's separate **Daily** app (its own cloud resource, not part of the Paper/Meeting/... folder tree) — each date's page scan and to-dos land in a `daily-app` sub-block in the same daily note, right alongside any notebook-driven journal content. `daily_app_days_back` controls how far back it looks; runs as part of a full sync or on its own via `companion.py daily` / **Sync Daily App** in the dashboard.
@@ -50,7 +68,7 @@ It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transc
 
 A first run, start to finish.
 
-> **Quickest install:** with [pipx](https://pipx.pypa.io), `pipx install git+https://github.com/desyncc/inkbridge.git` gives you an `inkbridge` command that works from any folder. Everywhere below, read `python companion.py <command>` as `inkbridge <command>`, and skip step 1. Update later with `pipx upgrade inkbridge`.
+> **Quickest install:** with [pipx](https://pipx.pypa.io), `pipx install git+https://github.com/desyncc/inkbridge.git` gives you an `inkbridge` command that works from any folder. Everywhere below, read `python companion.py <command>` as `inkbridge <command>`, and skip step 1. Update later with `pipx upgrade inkbridge`, or pin a release with `pipx install git+https://github.com/desyncc/inkbridge.git@v1.1.0`.
 
 Otherwise, after `cd inkbridge` in step 1, every command runs from that folder.
 

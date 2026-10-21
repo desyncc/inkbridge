@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .client import AuthError, ViwoodsClient
-from . import health
+from . import __version__, health
 from .config import ConfigError, load_config, save_config
 from .ocr import OCREngine
 from .sync import LOCAL_CACHE_DIR, SyncEngine, _page_sort_key
@@ -252,6 +252,7 @@ def get_status():
         "error": error,
         "auth_error": auth_error,
         "has_token": bool(cfg.token),
+        "version": __version__,
         "health": health.load_health()
     }
 

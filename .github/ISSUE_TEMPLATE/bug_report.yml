@@ -1,0 +1,49 @@
+name: Bug report
+description: Something doesn't work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. The output of `inkbridge doctor` answers most of my questions,
+        and it leaves out your token, keys and alert address, so it is safe to paste.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `inkbridge doctor`
+      description: From a checkout, run `python companion.py doctor`. Paste it all.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run InkBridge?
+      options:
+        - pipx / pip
+        - A git checkout with a virtual environment
+        - Docker
+        - systemd service (daemon)
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines (optional)
+      description: From the terminal, `journalctl --user -u inkbridge`, or `docker compose logs`. Remove anything private.
+      render: text
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed any token, API key or private notebook content from what I pasted
+          required: true

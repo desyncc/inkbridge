@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from .client import AuthError, ViwoodsClient
 from . import health
-from .config import Config, ConfigError, load_config, save_config
+from .config import ConfigError, load_config, save_config
 from .ocr import OCREngine
 from .sync import LOCAL_CACHE_DIR, SyncEngine, _page_sort_key
 from .vault import ObsidianVault

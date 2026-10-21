@@ -10,7 +10,6 @@ import pytest
 
 import viwoods.sync as sync_module
 from viwoods.sync import SyncEngine, load_sync_state
-from viwoods.vault import ObsidianVault
 
 
 @pytest.fixture(autouse=True)

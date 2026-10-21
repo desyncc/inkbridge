@@ -21,6 +21,7 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/desyncc/inkbridge"
 Issues = "https://github.com/desyncc/inkbridge/issues"
+Changelog = "https://github.com/desyncc/inkbridge/blob/main/CHANGELOG.md"
 
 [project.scripts]
 inkbridge = "companion:main"
@@ -39,3 +40,12 @@ dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools.package-data]
 viwoods = ["web/*"]
+
+[tool.ruff]
+target-version = "py310"
+exclude = [".venv", "build", "dist"]
+
+# Real mistakes only (syntax errors, undefined or unused names, bad imports),
+# not formatting opinions.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

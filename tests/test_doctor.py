@@ -5,7 +5,6 @@ it, safe to paste into an issue.
 
 import os
 import time
-import types
 
 import httpx
 import pytest
@@ -145,8 +144,12 @@ def test_an_account_with_no_tablet_is_a_warning(vault, servers):
 
 
 def _jwt(days):
-    import base64, json
-    part = lambda o: base64.urlsafe_b64encode(json.dumps(o).encode()).decode().rstrip("=")
+    import base64
+    import json
+
+    def part(obj):
+        return base64.urlsafe_b64encode(json.dumps(obj).encode()).decode().rstrip("=")
+
     return f"{part({'alg': 'x'})}.{part({'exp': int(time.time() + days * 86400)})}.sig"
 
 

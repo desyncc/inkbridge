@@ -24,7 +24,9 @@ def test_busy_percent_takes_the_busiest_card_and_ignores_unreadable_ones(tmp_pat
 
 
 def test_is_busy_uses_the_mean_and_never_blocks_what_it_cannot_measure(tmp_path):
-    quiet = lambda s: None
+    def quiet(seconds):
+        return None
+
     assert G.is_busy(50, pattern=pat(tmp_path), sleep=quiet) is False       # nothing to read
     card(tmp_path, "card0", 90)
     assert G.is_busy(50, pattern=pat(tmp_path), sleep=quiet) is True

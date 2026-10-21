@@ -26,6 +26,15 @@ The tests run against a temporary data directory and a fake Viwoods API, so they
 real config, vault or account. Please keep it that way: **no real tokens, passwords or notebook
 content in tests or fixtures.**
 
+## Trying it without a tablet
+
+`python contrib/demo/run_demo.py` starts the real dashboard against a pretend Viwoods Cloud
+(`contrib/demo/fake_viwoods.py`) and a throwaway vault seeded with notes someone might already have,
+so you can work on the dashboard or the vault code without an account or any real notebooks. The
+README's screenshots come from the same demo: `contrib/demo/screenshots.py` and
+`contrib/demo/obsidian_screenshots.py` regenerate them (they need `pip install playwright`, and
+Obsidian installed for the second one).
+
 ## How the code is laid out
 
 | Path | What it does |
@@ -37,6 +46,7 @@ content in tests or fixtures.**
 | `viwoods/ocr.py` | The handwriting engines (Ollama, LM Studio, Gemini, Windows) and their cache |
 | `viwoods/health.py`, `viwoods/doctor.py` | Alerts, the last-sync record, the `doctor` report |
 | `viwoods/server.py`, `viwoods/web/` | The local dashboard |
+| `contrib/demo/` | The demo: a fake Viwoods Cloud, a seeded vault, and the screenshot scripts |
 | `tests/` | One file per area |
 
 ## Making a change

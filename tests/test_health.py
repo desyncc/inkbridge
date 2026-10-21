@@ -362,3 +362,21 @@ def test_the_alert_url_can_be_saved_from_the_dashboard(monkeypatch):
 
     assert response.status_code == 200
     assert config_module.load_config().notify_url == URL
+
+
+def test_the_dashboard_reports_the_real_version(monkeypatch):
+    import viwoods
+
+    stub = types.SimpleNamespace(
+        client=types.SimpleNamespace(get_devices=lambda: []),
+        state={"notes": {}, "last_full_sync": None},
+        vault=types.SimpleNamespace(describe_daily_notes=lambda: {"source": "config", "folder": "", "format": "", "template": ""}),
+    )
+    config_module.save_config(Config(token="t"))
+    monkeypatch.setattr(server, "get_engine", lambda: stub)
+    monkeypatch.delenv(server.ALLOWED_HOSTS_ENV, raising=False)
+    from fastapi.testclient import TestClient
+
+    body = TestClient(server.app, base_url="http://127.0.0.1:8765").get("/api/status").json()
+
+    assert body["version"] == viwoods.__version__

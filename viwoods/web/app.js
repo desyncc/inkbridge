@@ -58,6 +58,9 @@ async function loadStatus() {
     const res = await fetch("/api/status");
     const data = await res.json();
 
+    const versionTag = document.querySelector(".version-tag");
+    if (versionTag && data.version) versionTag.textContent = `v${data.version}`;
+
     // Device Pill
     const devPill = document.getElementById("devicePill");
     const devText = document.getElementById("deviceText");

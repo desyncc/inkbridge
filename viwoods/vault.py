@@ -11,9 +11,9 @@ from .obsidian import DailyNoteSettings, format_moment, read_daily_note_settings
 _MIRROR_ID_RE = re.compile(r"""^resource_id:\s*["']([^"']+)["']""", re.MULTILINE)
 
 # Delimiters for the block Viwoods owns inside a daily note. Everything
-# outside START/END is the user's and is never touched. Obsidian's native
-# %% %% comment syntax is used (not <!-- -->) so the markers stay hidden in
-# Live Preview, not just Reading view.
+# outside START/END is the user's and is never touched. They are Obsidian's
+# native %% %% comments: invisible in Reading view, dimmed (not hidden) in the
+# editor, where they show which part InkBridge owns.
 VIWOODS_START = "%% viwoods:start %%"
 VIWOODS_END = "%% viwoods:end %%"
 

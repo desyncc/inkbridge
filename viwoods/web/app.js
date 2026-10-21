@@ -115,6 +115,7 @@ const SETTINGS_FIELDS = {
   cfgAutoSyncInterval: { field: "auto_sync_interval", type: "number" },
   cfgMaxPages: { field: "max_pages_per_notebook", type: "number" },
   cfgDownloadRecordings: { field: "download_recordings", type: "checkbox" },
+  cfgRemoveDeleted: { field: "remove_deleted_notebooks", type: "checkbox" },
   cfgOcrEngine: { field: "ocr_engine" },
   cfgOllamaUrl: { field: "ollama_url" },
   cfgOllamaModel: { field: "ollama_model" },

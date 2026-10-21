@@ -56,6 +56,13 @@ class SyncEngine:
         # Notes left unrecorded because a page failed to download or OCR, so
         # the next sync retries them instead of skipping them as unmodified.
         self.incomplete: List[str] = []
+        # Filled by a full sync: every notebook the device listed, how many
+        # items each app listed, and the notebooks it removed from the vault.
+        self._seen_notes: set = set()
+        self._listed: Dict[Any, int] = {}
+        self.removed: List[Dict[str, Any]] = []
+        # Notes dropped from the state by this run, erased from the file on save.
+        self._removed_notes: set = set()
 
         LOCAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -72,6 +79,7 @@ class SyncEngine:
             for uuid in self._dirty_notes
             if uuid in self.state["notes"]
         }
+        removed_notes = set(self._removed_notes)
         last_full_sync = self.state.get("last_full_sync")
 
         def mutate(disk_state: dict) -> None:
@@ -79,6 +87,8 @@ class SyncEngine:
             if not isinstance(notes, dict):
                 notes = disk_state["notes"] = {}
             notes.update(dirty_notes)
+            for uuid in removed_notes:
+                notes.pop(uuid, None)
             # Never move last_full_sync backwards (ISO strings sort correctly).
             if last_full_sync and last_full_sync > (disk_state.get("last_full_sync") or ""):
                 disk_state["last_full_sync"] = last_full_sync
@@ -86,6 +96,7 @@ class SyncEngine:
         try:
             self.state = update_json(STATE_FILE, mutate, EMPTY_STATE)
             self._dirty_notes.clear()
+            self._removed_notes.clear()
         except Exception as e:
             print(f"Warning: Failed to save sync state: {e}")
 
@@ -141,10 +152,30 @@ class SyncEngine:
         note_state = self.state["notes"].get(uuid, {})
         cached_mod = note_state.get("last_modified", 0)
 
+        # Moving or renaming a notebook on the device may not touch its
+        # last-modified time, so also compare where its file sits in the vault
+        # with where it belongs now.
+        existing = self.vault.find_mirror_files(uuid)
+        target = self.vault.mirror_target(rel_folder_path, note_name, uuid)
+        relocated = bool(existing) and target not in existing
+
+        # The right file is in place but older copies remain from before the
+        # notebook moved or was renamed (earlier versions never removed them).
+        if existing and not relocated and len(existing) > 1:
+            if dry_run:
+                self.planned.append({
+                    "uuid": uuid, "name": note_name, "folder": rel_folder_path,
+                    "app_type": app_type, "reason": "stale copy",
+                })
+            else:
+                for stale in self.vault.remove_mirror_files(uuid, keep=target):
+                    print(f"Removed the outdated file for '{note_name}': {stale.name}")
+
         # Skip if unmodified and not forced. Page count is deliberately not
         # part of this test: a genuinely empty note would otherwise be
         # re-fetched and re-processed on every single sync.
-        if not force and cached_mod and last_modified and last_modified <= cached_mod:
+        if (not force and not relocated and cached_mod and last_modified
+                and last_modified <= cached_mod):
             if progress_cb:
                 progress_cb(f"Skipping unmodified note: {note_name}", 1.0)
             return False
@@ -156,7 +187,7 @@ class SyncEngine:
                 "name": note_name,
                 "folder": rel_folder_path,
                 "app_type": app_type,
-                "reason": "new" if not cached_mod else "modified",
+                "reason": "moved" if relocated else ("new" if not cached_mod else "modified"),
             })
             if progress_cb:
                 progress_cb(f"Would sync: {note_name}", 1.0)
@@ -271,13 +302,34 @@ class SyncEngine:
                 metadata["inferred_tasks"] = self.ocr.infer_tasks(combined_text, force=force)
 
         # 1. Mirror into Obsidian Viwoods/ directory
-        self.vault.mirror_notebook(
+        written_mirror = self.vault.mirror_notebook(
             rel_folder_path=rel_folder_path,
             notebook_name=note_name,
             uuid=uuid,
             pages_data=pages_data,
             metadata=metadata
         )
+
+        # The notebook was moved or renamed on the device: its old file, and
+        # any image left over from an old title or a deleted page, are stale.
+        for stale in self.vault.remove_mirror_files(uuid, keep=written_mirror):
+            print(f"Removed the outdated file for '{note_name}': {stale.name}")
+        if not failed_pages:
+            current = [
+                os.path.basename(p["local_image_path"]) for p in pages_data if p.get("local_image_path")
+            ] + [
+                os.path.basename(r["local_audio_path"])
+                for r in metadata.get("recordings") or []
+                if isinstance(r, dict) and r.get("local_audio_path")
+            ]
+            recordings_complete = getattr(self.config, "download_recordings", True) and all(
+                r.get("local_audio_path")
+                for r in metadata.get("recordings") or []
+                if isinstance(r, dict) and self._recording_url(r)
+            )
+            self.vault.remove_attachments(
+                uuid, keep=current, kinds=("p", "rec") if recordings_complete else ("p",)
+            )
 
         # 2. Check if this is a Journal entry that should inject into 10 - Journals
         date_str = self.is_date_str(note_name)
@@ -332,6 +384,7 @@ class SyncEngine:
         self.state["notes"][uuid] = {
             "name": note_name,
             "app_type": app_type,
+            "folder": rel_folder_path,
             "last_modified": last_modified,
             "pages_count": len(pages_data),
             "total_pages": total_pages,
@@ -428,6 +481,7 @@ class SyncEngine:
             progress_cb(f"Scanning folder: {current_rel}...", 0.05)
 
         items = self.client.get_folder_items(app_type=app_type, resource_id=resource_id, sub_tab=sub_tab)
+        self._listed[app_type] = self._listed.get(app_type, 0) + len(items)
         synced_count = 0
 
         for it in items:
@@ -438,6 +492,11 @@ class SyncEngine:
 
             # Skip template directories and background images (they are not user notes)
             if item_uuid.startswith("NOTE_TEMPLATE_") or item_uuid.startswith("TEMPLATE_IMAGE_") or name.lower().endswith(".png"):
+                continue
+
+            # The listing asks for deleted items too (isDelete -1); one that
+            # comes back flagged is gone, and so is everything beneath it.
+            if it.get("isDelete") == 1:
                 continue
 
             # Check if directory / folder (type 0 or 5)
@@ -462,6 +521,8 @@ class SyncEngine:
                 synced_count += sub_count
             else:
                 # Regular notebook / note
+                if item_uuid:
+                    self._seen_notes.add(item_uuid)
                 success = self.sync_notebook(
                     item=it,
                     rel_folder_path=current_rel,
@@ -494,8 +555,13 @@ class SyncEngine:
 
         self.planned = []
         self.incomplete = []
+        self.removed = []
+        self._seen_notes = set()
+        self._listed = {}
         self.vault.begin_run()
         wanted = set(app_types) if app_types is not None else None
+        # Apps whose device listing can be trusted to say what no longer exists.
+        checked_apps = set()
 
         # Refresh device info
         self.client.get_devices()
@@ -514,6 +580,7 @@ class SyncEngine:
 
             # Skip apps with 0 items
             if count == 0:
+                checked_apps.add(app_type)
                 continue
 
             if progress_cb:
@@ -530,6 +597,11 @@ class SyncEngine:
             )
             total_synced += synced
             details[name] = synced
+            # An app the root says holds items but whose listing came back
+            # empty is more likely a bad response than an emptied app: leave
+            # its notebooks in the vault rather than delete them all.
+            if self._listed.get(app_type, 0) > 0:
+                checked_apps.add(app_type)
 
         # The Daily app is a separate resource type with no folder tree, so
         # it is never reached by the root-folder walk above. Only pull it
@@ -541,6 +613,9 @@ class SyncEngine:
             total_synced += daily_synced
             details["Daily"] = daily_synced
 
+        if getattr(self.config, "remove_deleted_notebooks", True):
+            self.removed = self._remove_deleted(checked_apps, progress_cb, dry_run)
+
         if not dry_run:
             self.state["last_full_sync"] = datetime.now().isoformat()
             self._save_state()
@@ -549,6 +624,9 @@ class SyncEngine:
         if progress_cb:
             verb = "would be updated" if dry_run else "updated"
             summary = f"Sync completed! {total_synced} notes {verb}."
+            if self.removed:
+                verb = "would be removed" if dry_run else "removed"
+                summary += f" {len(self.removed)} deleted on the device, {verb} from the vault."
             if self.incomplete:
                 summary += f" {len(self.incomplete)} incomplete, will retry next sync."
             if self.vault.skipped_dates:
@@ -563,8 +641,51 @@ class SyncEngine:
             "dry_run": dry_run,
             "planned": list(self.planned),
             "incomplete": list(self.incomplete),
+            "removed": list(self.removed),
             "skipped_dates": sorted(self.vault.skipped_dates)
         }
+
+    def _remove_deleted(
+        self,
+        checked_apps: set,
+        progress_cb: Optional[Callable[[str, float], None]] = None,
+        dry_run: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Removes from the vault every synced notebook of `checked_apps` that
+        the device no longer lists: its mirror file (and any folder that
+        empties), page images, recordings, copies in daily notes and cache.
+        A dry run only reports them in `planned`.
+        """
+        removed = []
+        for uuid, entry in list(self.state["notes"].items()):
+            if uuid in self._seen_notes or entry.get("app_type") not in checked_apps:
+                continue
+            name = entry.get("name") or uuid
+            folder = entry.get("folder", "")
+            removed.append({"uuid": uuid, "name": name, "folder": folder})
+
+            if dry_run:
+                self.planned.append({
+                    "uuid": uuid, "name": name, "folder": folder,
+                    "app_type": entry.get("app_type"), "reason": "deleted",
+                })
+                continue
+
+            if progress_cb:
+                progress_cb(f"Removing deleted note: {name}", 0.97)
+            self.vault.remove_mirror_files(uuid)
+            self.vault.remove_attachments(uuid)
+            self.vault.remove_journal_block_elsewhere(uuid)
+            for cached in LOCAL_CACHE_DIR.glob(f"{uuid}_*"):
+                try:
+                    cached.unlink()
+                except OSError:
+                    pass
+            del self.state["notes"][uuid]
+            self._dirty_notes.discard(uuid)
+            self._removed_notes.add(uuid)
+        return removed
 
     def find_resource_location(
         self,

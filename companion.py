@@ -116,13 +116,18 @@ def cmd_sync(force=False, engine=None, dry_run=False):
     print("\n" + "=" * 45)
     if dry_run:
         planned = result.get("planned", [])
-        print(f"Dry run: {len(planned)} notebook(s) would be synced.")
+        print(f"Dry run: {len(planned)} notebook(s) would be synced, moved or removed.")
         for note in planned:
             print(f"  - [{note['reason']}] {note['folder']}/{note['name']}")
     else:
         print(f"Sync Complete! {result['total_synced']} notebook(s) updated.")
         for cat, count in result.get("details", {}).items():
             print(f"  - {cat}: {count} note(s)")
+        removed = result.get("removed", [])
+        if removed:
+            print(f"{len(removed)} notebook(s) deleted on the device were removed from the vault:")
+            for note in removed:
+                print(f"  - {note['folder']}/{note['name']}")
         _print_incomplete(result.get("incomplete", []))
         _print_skipped_dates(result.get("skipped_dates", []))
     print("=" * 45 + "\n")

@@ -167,6 +167,7 @@ default:
   "auto_sync_interval": 0,
   "download_recordings": true,
   "remove_deleted_notebooks": true,
+  "max_deletions_per_sync": 10,
   "max_pages_per_notebook": 50,
   "daily_app_days_back": 30
 }
@@ -201,6 +202,7 @@ default:
 | `auto_sync_interval` | Minutes between automatic syncs while `serve` is running. `0` disables. |
 | `download_recordings` | Save meeting audio into the attachments folder and link it. |
 | `remove_deleted_notebooks` | Keep the vault a true mirror: a full sync deletes the note, page images, recordings and daily-note copies of any notebook (or folder) you deleted on the tablet, and removes folders that end up empty. Moves and renames are always followed, whatever this is set to. Set `false` to keep deleted notebooks in the vault. Preview with `sync --dry-run`. |
+| `max_deletions_per_sync` | Safety limit for the above. A sync that would delete more than this many notebooks, or more than half of a library of three or more, deletes **nothing**, says so loudly, and waits: run `companion.py sync --confirm-deletions` (or press OK in the dashboard's prompt) to go ahead. It catches a wrong account or a bad response from the cloud. `0` turns the check off. |
 | `max_pages_per_notebook` | Cap on pages per notebook (large imported PDF planners). `0` means no cap; when pages are dropped the mirrored note says so. |
 | `daily_app_days_back` | How many days back `companion.py daily` (and the `daily` step of a full sync) pulls from the Viwoods Daily app. |
 
@@ -277,6 +279,11 @@ If a page can't be downloaded or transcribed (say Ollama isn't running), the not
 python companion.py sync --dry-run
 ```
 Lists the notebooks that would be synced, and why, without fetching, transcribing or writing anything.
+
+```bash
+python companion.py sync --confirm-deletions
+```
+Applies deletions that a sync held back as too many (see `max_deletions_per_sync`). Only use it once you've checked the listed notebooks really are gone from your tablet.
 
 ### Export a Note
 ```bash

@@ -185,6 +185,7 @@ class ConfigUpdateRequest(BaseModel):
     max_inferred_tasks: Optional[int] = None
     daily_app_days_back: Optional[int] = None
     remove_deleted_notebooks: Optional[bool] = None
+    max_deletions_per_sync: Optional[int] = None
 
 
 class LoginRequest(BaseModel):
@@ -198,6 +199,7 @@ class SyncRequest(BaseModel):
     force: bool = False
     resource_id: Optional[str] = ""
     app_type: int = 1
+    confirm_deletions: bool = False  # apply deletions a sync held back as too many
 
 
 @app.get("/api/status")
@@ -455,7 +457,8 @@ def _claim_sync_slot(message: str = "Initializing sync...") -> bool:
     return True
 
 
-def run_sync_task(scope: str, force: bool, resource_id: str = "", app_type: int = 1) -> None:
+def run_sync_task(scope: str, force: bool, resource_id: str = "", app_type: int = 1,
+                  confirm_deletions: bool = False) -> None:
     """Runs a sync and publishes its progress. The slot must already be claimed."""
     engine = get_engine()
     engine.ocr.hold_for_gpu = True      # gpu_busy_limit: a sync waits for a quiet GPU
@@ -479,10 +482,12 @@ def run_sync_task(scope: str, force: bool, resource_id: str = "", app_type: int 
             result = {"scope": "folder", "resource_id": resource_id,
                       "app_type": app_type, "synced": count}
         elif scope == "paper":
-            result = engine.sync_all(force=force, progress_cb=on_progress, app_types=[1])
+            result = engine.sync_all(force=force, progress_cb=on_progress, app_types=[1],
+                                     confirm_deletions=confirm_deletions)
             result["scope"] = "paper"
         else:
-            result = engine.sync_all(force=force, progress_cb=on_progress)
+            result = engine.sync_all(force=force, progress_cb=on_progress,
+                                     confirm_deletions=confirm_deletions)
 
         sync_status["last_result"] = result
         sync_status["message"] = "Completed"
@@ -504,7 +509,8 @@ def trigger_sync(req: SyncRequest, background_tasks: BackgroundTasks):
         )
 
     background_tasks.add_task(
-        run_sync_task, req.scope, req.force, req.resource_id or "", req.app_type
+        run_sync_task, req.scope, req.force, req.resource_id or "", req.app_type,
+        req.confirm_deletions
     )
     return {"code": 200, "message": "Sync started.", "status": sync_status}
 

@@ -96,7 +96,7 @@ def cmd_set_engine(engine: str, model: str = None, url: str = None, think: bool 
         print(f"  Thinking: {cfg.ollama_think}")
 
 
-def cmd_sync(force=False, engine=None, dry_run=False):
+def cmd_sync(force=False, engine=None, dry_run=False, confirm_deletions=False):
     cfg = load_config()
     if engine:
         cfg.ocr_engine = engine
@@ -112,13 +112,15 @@ def cmd_sync(force=False, engine=None, dry_run=False):
     def on_progress(msg, pct):
         print(f"[{int(pct * 100):3d}%] {msg}")
 
-    result = eng.sync_all(force=force, progress_cb=on_progress, dry_run=dry_run)
+    result = eng.sync_all(force=force, progress_cb=on_progress, dry_run=dry_run,
+                          confirm_deletions=confirm_deletions)
     print("\n" + "=" * 45)
     if dry_run:
         planned = result.get("planned", [])
         print(f"Dry run: {len(planned)} notebook(s) would be synced, moved or removed.")
         for note in planned:
             print(f"  - [{note['reason']}] {note['folder']}/{note['name']}")
+        _print_held_back(result.get("held_back", []))
     else:
         print(f"Sync Complete! {result['total_synced']} notebook(s) updated.")
         for cat, count in result.get("details", {}).items():
@@ -128,9 +130,20 @@ def cmd_sync(force=False, engine=None, dry_run=False):
             print(f"{len(removed)} notebook(s) deleted on the device were removed from the vault:")
             for note in removed:
                 print(f"  - {note['folder']}/{note['name']}")
+        _print_held_back(result.get("held_back", []))
         _print_incomplete(result.get("incomplete", []))
         _print_skipped_dates(result.get("skipped_dates", []))
     print("=" * 45 + "\n")
+
+
+def _print_held_back(held):
+    if held:
+        print(f"\n!! {len(held)} notebook(s) no longer on the device were NOT removed from the vault.")
+        print("   That is more than max_deletions_per_sync allows in one sync (or most of your")
+        print("   library), which usually means a wrong account or a bad response, not real deletions:")
+        for note in held:
+            print(f"     - {note['folder']}/{note['name']}")
+        print("   If they really are deleted, run:  python companion.py sync --confirm-deletions")
 
 
 def _print_incomplete(names):
@@ -310,6 +323,8 @@ def main():
     p_sync.add_argument("--force", action="store_true", help="Force re-sync and re-transcribe all notes")
     p_sync.add_argument("--dry-run", action="store_true", help="Report what would change without writing anything")
     p_sync.add_argument("--engine", choices=["windows", "ollama", "gemini", "lmstudio"], help="OCR engine to use")
+    p_sync.add_argument("--confirm-deletions", action="store_true",
+                        help="Remove notebooks deleted on the device even if there are more than max_deletions_per_sync")
 
     # journals
     p_journals = subparsers.add_parser("journals", help="Sync daily journals only")
@@ -355,7 +370,8 @@ def _dispatch(args):
     elif args.command == "export":
         cmd_export(query=args.query, fmt=args.format, output_dir=args.output, list_notes=args.list)
     elif args.command == "sync":
-        cmd_sync(force=args.force, engine=getattr(args, "engine", None), dry_run=args.dry_run)
+        cmd_sync(force=args.force, engine=getattr(args, "engine", None), dry_run=args.dry_run,
+                 confirm_deletions=args.confirm_deletions)
     elif args.command == "journals":
         cmd_journals(days=args.days, force=args.force, engine=getattr(args, "engine", None))
     elif args.command == "daily":

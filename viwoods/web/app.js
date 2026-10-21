@@ -116,6 +116,7 @@ const SETTINGS_FIELDS = {
   cfgMaxPages: { field: "max_pages_per_notebook", type: "number" },
   cfgDownloadRecordings: { field: "download_recordings", type: "checkbox" },
   cfgRemoveDeleted: { field: "remove_deleted_notebooks", type: "checkbox" },
+  cfgMaxDeletions: { field: "max_deletions_per_sync", type: "number" },
   cfgOcrEngine: { field: "ocr_engine" },
   cfgOllamaUrl: { field: "ollama_url" },
   cfgOllamaModel: { field: "ollama_model" },
@@ -497,7 +498,7 @@ function bindEvents() {
   document.getElementById("btnSaveConfig").addEventListener("click", saveSettings);
 }
 
-async function startSync(scope) {
+async function startSync(scope, confirmDeletions = false) {
   const banner = document.getElementById("syncProgressBanner");
   const msg = document.getElementById("syncProgressMessage");
   const pct = document.getElementById("syncProgressPercent");
@@ -511,7 +512,7 @@ async function startSync(scope) {
     const res = await fetch("/api/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scope: scope, force: false })
+      body: JSON.stringify({ scope: scope, force: false, confirm_deletions: confirmDeletions })
     });
 
     if (res.status === 409) {
@@ -528,6 +529,19 @@ async function startSync(scope) {
     alert("Failed to start sync: " + err.message);
     syncIcon.classList.remove("spin");
   }
+}
+
+// A sync that would delete more than the safety limit deleted nothing. Ask
+// before applying it: a wrong account or a bad response looks the same.
+function offerHeldBackDeletions(held, scope) {
+  const names = held.slice(0, 15).map(n => `  • ${n.folder ? n.folder + "/" : ""}${n.name}`).join("\n");
+  const more = held.length > 15 ? `\n  …and ${held.length - 15} more` : "";
+  const ok = confirm(
+    `${held.length} notebook(s) are no longer on your device, which is more than the deletion safety limit.\n` +
+    `They were NOT removed from your vault:\n\n${names}${more}\n\n` +
+    `Delete them from the vault now? Press Cancel if you did not delete these on your tablet.`
+  );
+  if (ok) startSync(scope === "paper" ? "paper" : "all", true);
 }
 
 function pollSyncProgress() {
@@ -559,6 +573,9 @@ function pollSyncProgress() {
         // Refresh views
         loadStatus();
         loadNotes();
+
+        const held = (status.last_result || {}).held_back || [];
+        if (held.length) offerHeldBackDeletions(held, status.last_result.scope || "all");
       }
     } catch (err) {
       clearInterval(syncPollingTimer);

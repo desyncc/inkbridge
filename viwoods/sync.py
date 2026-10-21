@@ -754,15 +754,23 @@ class SyncEngine:
             print(f"Error fetching Daily app to-dos: {e}")
             todo_items = []
 
+        # The API sometimes sends unpadded dates (2026-10-1), which would
+        # never match the padded daily note's file name.
+        def padded(date: str) -> str:
+            try:
+                return datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m-%d")
+            except ValueError:
+                return date
+
         by_date: Dict[str, Dict[str, list]] = {}
         for it in note_items:
             if it.get("isDelete") or not it.get("date"):
                 continue
-            by_date.setdefault(it["date"], {"notes": [], "todos": []})["notes"].append(it)
+            by_date.setdefault(padded(it["date"]), {"notes": [], "todos": []})["notes"].append(it)
         for it in todo_items:
             if it.get("isDelete") or not it.get("date"):
                 continue
-            by_date.setdefault(it["date"], {"notes": [], "todos": []})["todos"].append(it)
+            by_date.setdefault(padded(it["date"]), {"notes": [], "todos": []})["todos"].append(it)
 
         synced = 0
         for date_str, entries in sorted(by_date.items()):

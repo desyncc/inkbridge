@@ -180,3 +180,19 @@ def test_an_edited_daily_page_is_downloaded_and_transcribed_again(config, vault)
 
     text = note_path(vault, date_str).read_text(encoding="utf-8")
     assert "second draft" in text and "first draft" not in text
+
+
+def test_unpadded_api_dates_find_the_padded_daily_note_and_are_recorded(config, vault):
+    # The API sometimes sends 2026-08-4 for September 5th.
+    path = write_note(vault, "2026-08-04", month="August")
+    notes = [make_note_item(1, "2026-08-4", url="https://example.com/p.png")]
+    ocr = FakeOCR()
+    engine = SyncEngine(config, client=FakeClient(notes=notes), ocr=ocr, vault=vault)
+
+    assert engine.sync_daily_app(days_back=30) == 1
+    assert VIWOODS_START in path.read_text(encoding="utf-8")
+    assert "daily:2026-08-04" in engine.state["notes"]
+
+    # Recorded under the real date, so the next sync leaves it alone.
+    assert engine.sync_daily_app(days_back=30) == 0
+    assert ocr.calls == 1

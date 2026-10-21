@@ -85,6 +85,10 @@ class Config(BaseModel):
     download_recordings: bool = True  # save meeting audio into the attachments folder
     max_pages_per_notebook: int = 50  # Cap on large imported PDF planners
     daily_app_days_back: int = 30  # How far back to pull Daily app pages/to-dos
+    # Keep the vault a 1:1 mirror of the device: a notebook (or folder) deleted
+    # on the tablet is deleted from the vault, with its images and the copies
+    # of it in daily notes, on the next full sync. Off leaves them in place.
+    remove_deleted_notebooks: bool = True
 
 
 # Gemini models Google has shut down, which InkBridge once used as its

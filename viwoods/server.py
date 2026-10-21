@@ -184,6 +184,7 @@ class ConfigUpdateRequest(BaseModel):
     infer_tasks: Optional[bool] = None
     max_inferred_tasks: Optional[int] = None
     daily_app_days_back: Optional[int] = None
+    remove_deleted_notebooks: Optional[bool] = None
 
 
 class LoginRequest(BaseModel):

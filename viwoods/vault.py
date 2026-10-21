@@ -3,10 +3,12 @@ import re
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from .config import CONFIG_PATH, Config
 from .obsidian import DailyNoteSettings, format_moment, read_daily_note_settings, render_template
+
+_MIRROR_ID_RE = re.compile(r"""^resource_id:\s*["']([^"']+)["']""", re.MULTILINE)
 
 # Delimiters for the block Viwoods owns inside a daily note. Everything
 # outside START/END is the user's and is never touched. Obsidian's native
@@ -188,11 +190,14 @@ class ObsidianVault:
         self.skipped_dates: set = set()
         # uuid -> daily notes holding its sub-block, built on first use per run.
         self._block_index: Optional[Dict[str, set]] = None
+        # uuid -> mirror files carrying that resource_id, built on first use per run.
+        self._mirror_index: Optional[Dict[str, set]] = None
 
     def begin_run(self) -> None:
         """Resets the per-sync bookkeeping; call at the start of each sync."""
         self.skipped_dates.clear()
         self._block_index = None
+        self._mirror_index = None
 
         # Directories are created at write time (save_attachment,
         # mirror_notebook, sync_daily_journal), not here: instantiating the
@@ -268,6 +273,104 @@ class ObsidianVault:
         shutil.copy2(src_file, dest_path)
         return str(dest_path)
 
+    # --- Mirror bookkeeping --------------------------------------------------
+
+    def _mirror_files_by_id(self) -> Dict[str, set]:
+        """Maps notebook uuid -> the mirror files that name it in their frontmatter."""
+        if self._mirror_index is None:
+            index: Dict[str, set] = {}
+            if self.mirror_dir.is_dir():
+                for path in sorted(self.mirror_dir.rglob("*.md")):
+                    if any(part.startswith(".") for part in path.relative_to(self.mirror_dir).parts):
+                        continue
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            head = f.read(1000)
+                    except (OSError, UnicodeDecodeError):
+                        continue
+                    if not head.startswith("---"):
+                        continue
+                    found = _MIRROR_ID_RE.search(head)
+                    if found:
+                        index.setdefault(found.group(1), set()).add(path)
+            self._mirror_index = index
+        return self._mirror_index
+
+    def find_mirror_files(self, uuid: str) -> List[Path]:
+        """Every mirror file written for `uuid`, wherever it now sits."""
+        return sorted(p for p in self._mirror_files_by_id().get(uuid, set()) if p.is_file())
+
+    def mirror_target(self, rel_folder_path: str, notebook_name: str, uuid: str) -> Path:
+        """Where `uuid`'s mirror file belongs: <mirror>/<folder>/<title>.md."""
+        clean_rel = rel_folder_path.strip("/\\")
+        target_dir = self.mirror_dir / clean_rel if clean_rel else self.mirror_dir
+        safe_title = self._sanitize_filename(notebook_name)
+        target_file = target_dir / f"{safe_title}.md"
+
+        # If a file with this title exists for a different note UUID, disambiguate with short uuid
+        if target_file.exists():
+            try:
+                with open(target_file, "r", encoding="utf-8") as f:
+                    content_head = f.read(500)
+                if f'resource_id: "{uuid}"' not in content_head and f"resource_id: '{uuid}'" not in content_head:
+                    target_file = target_dir / f"{safe_title} ({uuid[:6]}).md"
+            except Exception:
+                pass
+        return target_file
+
+    def remove_mirror_files(self, uuid: str, keep: Optional[Path] = None) -> List[Path]:
+        """
+        Deletes `uuid`'s mirror files except `keep`, then any folders that
+        leaves empty. Returns the files removed.
+        """
+        keep_resolved = keep.resolve() if keep else None
+        removed = []
+        for path in self.find_mirror_files(uuid):
+            if keep_resolved and path.resolve() == keep_resolved:
+                continue
+            try:
+                path.unlink()
+            except OSError as e:
+                print(f"Could not remove {path}: {e}")
+                continue
+            self._mirror_files_by_id().get(uuid, set()).discard(path)
+            self._prune_empty_dirs(path.parent)
+            removed.append(path)
+        return removed
+
+    def _prune_empty_dirs(self, directory: Path) -> None:
+        """Removes `directory` and its parents while empty, stopping at the mirror root."""
+        mirror = self.mirror_dir.resolve()
+        current = directory.resolve()
+        while current != mirror and mirror in current.parents:
+            try:
+                current.rmdir()
+            except OSError:
+                break
+            current = current.parent
+
+    def remove_attachments(self, uuid: str, keep: Iterable[str] = (), kinds: Iterable[str] = ("p", "rec")) -> List[Path]:
+        """
+        Deletes the page images / recordings saved for `uuid` (see
+        attachment_filename) whose file name is not in `keep`. Returns them.
+        """
+        if not self.attachments_dir.is_dir():
+            return []
+        keep_names = set(keep)
+        pattern = re.compile(
+            rf"_{re.escape((uuid or 'nouuid')[:8])}_(?:{'|'.join(map(re.escape, kinds))})\d+\.[A-Za-z0-9]+$"
+        )
+        removed = []
+        for path in sorted(self.attachments_dir.iterdir()):
+            if path.is_file() and pattern.search(path.name) and path.name not in keep_names:
+                try:
+                    path.unlink()
+                except OSError as e:
+                    print(f"Could not remove {path}: {e}")
+                    continue
+                removed.append(path)
+        return removed
+
     def mirror_notebook(
         self,
         rel_folder_path: str,
@@ -283,23 +386,9 @@ class ObsidianVault:
         if metadata is None:
             metadata = {}
 
-        # Target directory under Viwoods/
-        clean_rel = rel_folder_path.strip("/\\")
-        target_dir = self.mirror_dir / clean_rel if clean_rel else self.mirror_dir
-        target_dir.mkdir(parents=True, exist_ok=True)
-
+        target_file = self.mirror_target(rel_folder_path, notebook_name, uuid)
+        target_file.parent.mkdir(parents=True, exist_ok=True)
         safe_title = self._sanitize_filename(notebook_name)
-        target_file = target_dir / f"{safe_title}.md"
-
-        # If a file with this title exists for a different note UUID, disambiguate with short uuid
-        if target_file.exists():
-            try:
-                with open(target_file, "r", encoding="utf-8") as f:
-                    content_head = f.read(500)
-                if f'resource_id: "{uuid}"' not in content_head and f"resource_id: '{uuid}'" not in content_head:
-                    target_file = target_dir / f"{safe_title} ({uuid[:6]}).md"
-            except Exception:
-                pass
 
         updated_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -399,6 +488,7 @@ class ObsidianVault:
         full_content = "\n".join(frontmatter + body)
         with open(target_file, "w", encoding="utf-8") as f:
             f.write(full_content)
+        self._mirror_files_by_id().setdefault(uuid, set()).add(target_file)
 
         return target_file
 

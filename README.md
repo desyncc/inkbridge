@@ -12,7 +12,7 @@ It mirrors your tablet's folder hierarchy, pulls down high-res ink scans, transc
 
 ## ✨ Features
 
-- **📂 1:1 Directory Mirroring**: Preserves your tablet's exact folder tree (`Paper`, `Journals`, `Meeting`, `Knowledge Base`, etc.) inside your vault under `99 - Viwoods/`.
+- **📂 1:1 Directory Mirroring**: Preserves your tablet's exact folder tree (`Paper`, `Journals`, `Meeting`, `Knowledge Base`, etc.) inside your vault under `99 - Viwoods/`. Move or rename a notebook on the tablet and its note follows; delete one and its note, images and daily-note copies are removed (see `remove_deleted_notebooks`). Deletions are applied by full syncs (`sync`, the dashboard's Sync all / Paper), not by a single-folder or journals-only sync.
 - **✍️ Marker-Delimited Daily Journal Sync**: Detects dated notebooks (e.g. `2026-09-02`) or items in your `Journals` folder and updates the matching daily note.
   - **Uses your Obsidian Daily notes settings.** If the vault's Daily notes core plugin has settings (`.obsidian/daily-notes.json`), InkBridge uses the same folder, date format and template, so notes are found and created exactly where Obsidian puts them. `companion.py status` shows what it detected.
   - Without them, it looks for `YYYY-MM-DD.md` in `<daily_folder>/<Month>/`, directly in `<daily_folder>/`, or anywhere below it (e.g. a `YYYY/MM/` layout).
@@ -166,6 +166,7 @@ default:
 
   "auto_sync_interval": 0,
   "download_recordings": true,
+  "remove_deleted_notebooks": true,
   "max_pages_per_notebook": 50,
   "daily_app_days_back": 30
 }
@@ -199,6 +200,7 @@ default:
 | `max_inferred_tasks` | Cap on how many tasks `infer_tasks` pulls out per notebook. |
 | `auto_sync_interval` | Minutes between automatic syncs while `serve` is running. `0` disables. |
 | `download_recordings` | Save meeting audio into the attachments folder and link it. |
+| `remove_deleted_notebooks` | Keep the vault a true mirror: a full sync deletes the note, page images, recordings and daily-note copies of any notebook (or folder) you deleted on the tablet, and removes folders that end up empty. Moves and renames are always followed, whatever this is set to. Set `false` to keep deleted notebooks in the vault. Preview with `sync --dry-run`. |
 | `max_pages_per_notebook` | Cap on pages per notebook (large imported PDF planners). `0` means no cap; when pages are dropped the mirrored note says so. |
 | `daily_app_days_back` | How many days back `companion.py daily` (and the `daily` step of a full sync) pulls from the Viwoods Daily app. |
 

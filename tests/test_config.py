@@ -93,3 +93,14 @@ def test_the_retired_gemini_default_is_replaced(config_path):
 def test_a_chosen_gemini_model_is_kept(config_path):
     config_path.write_text(json.dumps({"token": "t", "gemini_model": "gemini-3.5-flash-lite"}))
     assert load_config().gemini_model == "gemini-3.5-flash-lite"
+
+
+def test_read_json_defaults_are_not_shared_between_callers(tmp_path):
+    from viwoods.jsonstore import read_json
+
+    default = {"notes": {}}
+    first = read_json(tmp_path / "missing.json", default)
+    first["notes"]["x"] = 1
+
+    assert read_json(tmp_path / "missing.json", default) == {"notes": {}}
+    assert default == {"notes": {}}

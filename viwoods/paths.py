@@ -32,6 +32,20 @@ _LEGACY_FILES = {
 _migrated = False
 
 
+def restrict_permissions(path: Path, mode: int) -> None:
+    """
+    Sets `path`'s permission bits (0o600 for files, 0o700 for directories) so
+    other users on the machine can't read the token, API keys and page scans.
+    Best effort: Windows ignores POSIX bits and some filesystems refuse them.
+    """
+    if os.name == "nt":
+        return
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        pass
+
+
 def _migrate_legacy_files(target: Path) -> None:
     """Moves data from the old project-root layout, once per process."""
     global _migrated
@@ -59,8 +73,15 @@ def data_dir(create: bool = True) -> Path:
     override: Optional[str] = os.environ.get(DATA_DIR_ENV)
     base = Path(override).expanduser() if override else DEFAULT_DATA_DIR
 
+    existed = base.exists()
     if create:
         base.mkdir(parents=True, exist_ok=True)
+        # The default directory is ours, so it's tightened even if an older
+        # version created it world-readable. A custom one is only locked down
+        # when we create it: an existing folder someone chose (a shared sync
+        # folder, say) keeps the permissions they gave it.
+        if override is None or not existed:
+            restrict_permissions(base, 0o700)
         # Only the default location adopts legacy files: an explicit
         # VIWOODS_DATA_DIR is a deliberate choice (and a test run) that should
         # never quietly relocate someone's existing data.

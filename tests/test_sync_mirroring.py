@@ -352,3 +352,101 @@ def test_dry_run_reports_leftover_copies_without_removing_them(config, vault):
 
     assert [(p["name"], p["reason"]) for p in result["planned"]] == [("Ideas", "stale copy")]
     assert stale.exists()
+
+
+# --- Deletion safety limit ---------------------------------------------------
+
+def library(n):
+    return [notebook(f"Note {i}") for i in range(n)]
+
+
+def synced_library(config, vault, notes):
+    client = TreeClient({"": list(notes)})
+    engine_for(config, vault, client).sync_all()
+    return client
+
+
+def present(vault, notes):
+    return [n["name"] for n in notes if mirrored(vault, f"{n['name']}.md").exists()]
+
+
+def test_deleting_more_than_the_limit_is_held_back_until_confirmed(config, vault):
+    config.max_deletions_per_sync = 2
+    notes = library(12)
+    client = synced_library(config, vault, notes)
+
+    client.tree[""] = notes[3:]  # three notebooks gone
+    result = engine_for(config, vault, client).sync_all()
+
+    assert result["removed"] == []
+    assert [h["name"] for h in result["held_back"]] == ["Note 0", "Note 1", "Note 2"]
+    assert len(present(vault, notes)) == 12
+    assert len(load_sync_state()["notes"]) == 12
+
+    # Still held back on the next sync, and applied once the user confirms.
+    assert engine_for(config, vault, client).sync_all()["removed"] == []
+    result = engine_for(config, vault, client).sync_all(confirm_deletions=True)
+    assert len(result["removed"]) == 3
+    assert result["held_back"] == []
+    assert present(vault, notes) == [n["name"] for n in notes[3:]]
+
+
+def test_deleting_up_to_the_limit_goes_through(config, vault):
+    config.max_deletions_per_sync = 2
+    notes = library(12)
+    client = synced_library(config, vault, notes)
+
+    client.tree[""] = notes[2:]
+    result = engine_for(config, vault, client).sync_all()
+
+    assert len(result["removed"]) == 2
+    assert result["held_back"] == []
+
+
+def test_deleting_most_of_a_small_library_is_held_back_even_under_the_limit(config, vault):
+    notes = library(4)
+    client = synced_library(config, vault, notes)
+
+    client.tree[""] = notes[3:]  # 3 of 4 gone, far below the default limit of 10
+    client.count = 1
+    result = engine_for(config, vault, client).sync_all()
+
+    assert result["removed"] == []
+    assert len(result["held_back"]) == 3
+    assert len(present(vault, notes)) == 4
+
+
+def test_deleting_half_a_small_library_is_not_held_back(config, vault):
+    notes = library(4)
+    client = synced_library(config, vault, notes)
+
+    client.tree[""] = notes[2:]
+    result = engine_for(config, vault, client).sync_all()
+
+    assert len(result["removed"]) == 2
+
+
+def test_a_limit_of_zero_switches_the_check_off(config, vault):
+    config.max_deletions_per_sync = 0
+    notes = library(12)
+    client = synced_library(config, vault, notes)
+
+    client.tree[""] = []
+    client.count = 0
+    result = engine_for(config, vault, client).sync_all()
+
+    assert len(result["removed"]) == 12
+    assert present(vault, notes) == []
+
+
+def test_dry_run_says_which_deletions_would_be_held_back(config, vault):
+    config.max_deletions_per_sync = 2
+    notes = library(12)
+    client = synced_library(config, vault, notes)
+
+    client.tree[""] = notes[3:]
+    result = engine_for(config, vault, client).sync_all(dry_run=True)
+
+    assert sorted(p["reason"] for p in result["planned"]) == ["held back"] * 3
+    assert len(result["held_back"]) == 3
+    assert len(present(vault, notes)) == 12

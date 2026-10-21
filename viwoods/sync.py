@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from .client import ViwoodsClient
 from .config import Config
 from .jsonstore import read_json, update_json
-from .paths import data_path
+from .paths import data_path, restrict_permissions
 from .ocr import OCREngine, OCRError
 from .vault import ObsidianVault, _to_date_str
 
@@ -61,10 +61,13 @@ class SyncEngine:
         self._seen_notes: set = set()
         self._listed: Dict[Any, int] = {}
         self.removed: List[Dict[str, Any]] = []
+        # Deletions a sync found but, being over max_deletions_per_sync, left for the user to confirm.
+        self.held_back: List[Dict[str, Any]] = []
         # Notes dropped from the state by this run, erased from the file on save.
         self._removed_notes: set = set()
 
         LOCAL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        restrict_permissions(LOCAL_CACHE_DIR, 0o700)  # page scans of your handwriting
 
     def _load_state(self) -> dict:
         return load_sync_state()
@@ -541,11 +544,14 @@ class SyncEngine:
         force: bool = False,
         progress_cb: Optional[Callable[[str, float], None]] = None,
         app_types: Optional[Iterable[int]] = None,
-        dry_run: bool = False
+        dry_run: bool = False,
+        confirm_deletions: bool = False
     ) -> Dict[str, Any]:
         """
         Performs a full sync across the root apps (Paper, Meeting, Learning,
         Knowledge Base, Memo), or only `app_types` when given.
+        `confirm_deletions` applies deletions even when there are more than
+        max_deletions_per_sync of them.
         """
         if not dry_run:
             self.vault.require_exists()
@@ -556,6 +562,7 @@ class SyncEngine:
         self.planned = []
         self.incomplete = []
         self.removed = []
+        self.held_back = []
         self._seen_notes = set()
         self._listed = {}
         self.vault.begin_run()
@@ -614,7 +621,7 @@ class SyncEngine:
             details["Daily"] = daily_synced
 
         if getattr(self.config, "remove_deleted_notebooks", True):
-            self.removed = self._remove_deleted(checked_apps, progress_cb, dry_run)
+            self.removed = self._remove_deleted(checked_apps, progress_cb, dry_run, confirm_deletions)
 
         if not dry_run:
             self.state["last_full_sync"] = datetime.now().isoformat()
@@ -627,6 +634,12 @@ class SyncEngine:
             if self.removed:
                 verb = "would be removed" if dry_run else "removed"
                 summary += f" {len(self.removed)} deleted on the device, {verb} from the vault."
+            if self.held_back:
+                summary += (
+                    f" {len(self.held_back)} deleted on the device NOT removed from the vault: "
+                    f"that is more than max_deletions_per_sync allows at once. If they really "
+                    f"are gone, run `companion.py sync --confirm-deletions` (or confirm in the dashboard)."
+                )
             if self.incomplete:
                 summary += f" {len(self.incomplete)} incomplete, will retry next sync."
             if self.vault.skipped_dates:
@@ -642,6 +655,7 @@ class SyncEngine:
             "planned": list(self.planned),
             "incomplete": list(self.incomplete),
             "removed": list(self.removed),
+            "held_back": list(self.held_back),
             "skipped_dates": sorted(self.vault.skipped_dates)
         }
 
@@ -649,27 +663,46 @@ class SyncEngine:
         self,
         checked_apps: set,
         progress_cb: Optional[Callable[[str, float], None]] = None,
-        dry_run: bool = False
+        dry_run: bool = False,
+        confirm_deletions: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Removes from the vault every synced notebook of `checked_apps` that
         the device no longer lists: its mirror file (and any folder that
         empties), page images, recordings, copies in daily notes and cache.
-        A dry run only reports them in `planned`.
+        A dry run only reports them in `planned`. When there are more than
+        max_deletions_per_sync (or more than half of a small library) nothing
+        is removed unless `confirm_deletions`; they are left in `held_back`.
         """
+        tracked = [
+            e for u, e in self.state["notes"].items() if e.get("app_type") in checked_apps
+        ]
+        gone = [
+            (uuid, entry) for uuid, entry in self.state["notes"].items()
+            if uuid not in self._seen_notes and entry.get("app_type") in checked_apps
+        ]
+        limit = getattr(self.config, "max_deletions_per_sync", 10)
+        too_many = limit > 0 and (
+            len(gone) > limit or (len(gone) >= 3 and len(gone) * 2 > len(tracked))
+        )
+        hold = too_many and not confirm_deletions
+
         removed = []
-        for uuid, entry in list(self.state["notes"].items()):
-            if uuid in self._seen_notes or entry.get("app_type") not in checked_apps:
-                continue
+        for uuid, entry in gone:
             name = entry.get("name") or uuid
             folder = entry.get("folder", "")
-            removed.append({"uuid": uuid, "name": name, "folder": folder})
+            item = {"uuid": uuid, "name": name, "folder": folder}
+
+            if hold:
+                self.held_back.append(item)
+                if dry_run:
+                    self.planned.append({**item, "app_type": entry.get("app_type"), "reason": "held back"})
+                continue
+
+            removed.append(item)
 
             if dry_run:
-                self.planned.append({
-                    "uuid": uuid, "name": name, "folder": folder,
-                    "app_type": entry.get("app_type"), "reason": "deleted",
-                })
+                self.planned.append({**item, "app_type": entry.get("app_type"), "reason": "deleted"})
                 continue
 
             if progress_cb:

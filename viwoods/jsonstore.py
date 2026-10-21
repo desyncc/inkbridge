@@ -11,12 +11,15 @@ the current contents, merges the caller's changes into them, and replaces the
 file atomically.
 """
 
+import copy
 import json
 import os
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
+
+from .paths import restrict_permissions
 
 try:  # POSIX
     import fcntl
@@ -56,7 +59,9 @@ def exclusive_lock(path: Path):
 
 def read_json(path: Path, default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Reads a JSON object, returning a copy of `default` if it is missing or corrupt."""
-    fallback = dict(default or {})
+    # Deep copy: the defaults hold nested dicts (EMPTY_STATE["notes"]), and a
+    # shared one would carry one caller's changes into the next.
+    fallback = copy.deepcopy(default or {})
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -74,6 +79,7 @@ def write_json_atomic(path: Path, data: Dict[str, Any]) -> None:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.flush()
             os.fsync(f.fileno())
+        restrict_permissions(Path(tmp_name), 0o600)
         os.replace(tmp_name, path)
     except BaseException:
         try:

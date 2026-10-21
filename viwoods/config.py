@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import BaseModel, ValidationError
 
 from .jsonstore import write_json_atomic
-from .paths import data_path
+from .paths import data_path, restrict_permissions
 
 CONFIG_PATH = data_path("config.json")
 
@@ -89,6 +89,11 @@ class Config(BaseModel):
     # on the tablet is deleted from the vault, with its images and the copies
     # of it in daily notes, on the next full sync. Off leaves them in place.
     remove_deleted_notebooks: bool = True
+    # Safety net for the above: a sync that would delete more than this many
+    # notebooks, or more than half of a small library, deletes nothing and
+    # asks for confirmation (sync --confirm-deletions) instead. It guards
+    # against a bad listing from the cloud or a wrong account. 0 = no check.
+    max_deletions_per_sync: int = 10
 
 
 # Gemini models Google has shut down, which InkBridge once used as its
@@ -106,6 +111,10 @@ def load_config() -> Config:
         cfg = Config()
         save_config(cfg)
         return cfg
+
+    # It holds the Viwoods token and the Gemini key; files written by older
+    # versions were readable by every user on the machine.
+    restrict_permissions(CONFIG_PATH, 0o600)
 
     # A config that fails to load is reported, never replaced with defaults:
     # it holds the user's token, and one hand-editing typo must not erase it.

@@ -9,6 +9,11 @@
 # Generated output
 exports/
 
+# Packaging
+build/
+dist/
+*.egg-info/
+
 # Python
 __pycache__/
 *.py[cod]

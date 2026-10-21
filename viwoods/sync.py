@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from .client import ViwoodsClient
 from .config import Config
 from .jsonstore import read_json, update_json
-from .paths import data_path, restrict_permissions
+from .paths import command, data_path, restrict_permissions
 from .ocr import OCREngine, OCRError
 from .vault import ObsidianVault, _to_date_str
 
@@ -638,7 +638,7 @@ class SyncEngine:
                 summary += (
                     f" {len(self.held_back)} deleted on the device NOT removed from the vault: "
                     f"that is more than max_deletions_per_sync allows at once. If they really "
-                    f"are gone, run `companion.py sync --confirm-deletions` (or confirm in the dashboard)."
+                    f"are gone, run `{command('sync --confirm-deletions')}` (or confirm in the dashboard)."
                 )
             if self.incomplete:
                 summary += f" {len(self.incomplete)} incomplete, will retry next sync."

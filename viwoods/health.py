@@ -16,7 +16,7 @@ import httpx
 from .client import AuthError
 from .config import Config
 from .jsonstore import read_json, update_json
-from .paths import data_path
+from .paths import command, data_path
 from .vault import VaultNotFoundError
 
 HEALTH_FILE = data_path("health.json")
@@ -40,7 +40,7 @@ def _classify(exc: BaseException) -> Tuple[str, str, bool]:
     if isinstance(exc, AuthError):
         return ("auth",
                 "Your Viwoods sign-in was rejected and could not be renewed. On the machine "
-                "running InkBridge, run: python companion.py login",
+                f"running InkBridge, run: {command('login')}",
                 True)
     if isinstance(exc, VaultNotFoundError):
         return ("vault", str(exc), True)
@@ -127,7 +127,7 @@ def report_success(cfg: Config, result: Optional[Dict[str, Any]] = None, alert: 
         message = (
             f"{len(held)} notebook(s) deleted on your tablet were NOT removed from your vault, "
             f"because that is more than the safety limit allows at once. If they really are "
-            f"gone, run: python companion.py sync --confirm-deletions"
+            f"gone, run: {command('sync --confirm-deletions')}"
         )
 
         def mutate_held(d: Dict[str, Any]) -> None:

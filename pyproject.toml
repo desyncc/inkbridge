@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inkbridge"
+description = "Sync a Viwoods AiPaper e-ink tablet into Obsidian: notebooks, handwriting OCR and daily journal entries."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+dynamic = ["version", "dependencies"]
+keywords = ["obsidian", "viwoods", "aipaper", "e-ink", "ocr", "handwriting"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Text Processing",
+]
+
+[project.urls]
+Homepage = "https://github.com/desyncc/inkbridge"
+Issues = "https://github.com/desyncc/inkbridge/issues"
+
+[project.scripts]
+inkbridge = "companion:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+# One list of dependencies: requirements.txt, which the Dockerfile uses too.
+[tool.setuptools]
+packages = ["viwoods"]
+py-modules = ["companion"]
+
+[tool.setuptools.dynamic]
+version = { attr = "viwoods.__version__" }
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.package-data]
+viwoods = ["web/*"]

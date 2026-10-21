@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import BaseModel, ValidationError
 
 from .jsonstore import update_json, write_json_atomic
-from .paths import data_path, restrict_permissions
+from .paths import command, data_path, restrict_permissions
 
 CONFIG_PATH = data_path("config.json")
 
@@ -13,7 +13,7 @@ CONFIG_PATH = data_path("config.json")
 REQUEST_SIGNING_SALT = "O9EfpIx4g9o8TKuCv2n5msBHucSrAf"
 
 NO_TOKEN_MESSAGE = (
-    "No Viwoods token configured. Run `python companion.py login`, or paste your "
+    f"No Viwoods token configured. Run `{command('login')}`, or paste your "
     "Access-Token from cloud.viwoods.com into the Settings tab of the web dashboard, "
     f"or add it to {CONFIG_PATH} as \"token\"."
 )

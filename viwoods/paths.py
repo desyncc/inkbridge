@@ -32,6 +32,22 @@ _LEGACY_FILES = {
 _migrated = False
 
 
+def is_installed(package_parent: Optional[Path] = None) -> bool:
+    """True when InkBridge was installed with pip/pipx, not run from a checkout or image."""
+    parent = package_parent or Path(__file__).resolve().parent.parent
+    return parent.name in ("site-packages", "dist-packages")
+
+
+def command(subcommand: str, installed: Optional[bool] = None) -> str:
+    """
+    How the user types `subcommand`: `inkbridge sync` when installed, `python companion.py sync`
+    from a checkout. Used in every message that tells someone what to run.
+    """
+    if installed is None:
+        installed = is_installed()
+    return f"inkbridge {subcommand}" if installed else f"python companion.py {subcommand}"
+
+
 def restrict_permissions(path: Path, mode: int) -> None:
     """
     Sets `path`'s permission bits (0o600 for files, 0o700 for directories) so

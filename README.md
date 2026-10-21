@@ -78,9 +78,15 @@ A first run, start to finish. After `cd inkbridge` in step 1, every command runs
 
    It opens at `http://127.0.0.1:8765`.
 
-4. **Fill in two settings** in the dashboard's Settings tab, then save:
-   - **Active Session Token (JWT)**, your Viwoods token. Sign in at `cloud.viwoods.com`, open your browser's developer tools, and copy the value of `localStorage.getItem('token')` from the Console (or the `Access-Token` header of any request in the Network tab).
-   - **Obsidian Vault Path.** The full path of your Obsidian vault folder, e.g. `/home/you/Obsidian` or `C:/Users/You/Obsidian`. Sync won't run until this points at a real folder.
+4. **Sign in to Viwoods and set your vault path.**
+
+   ```bash
+   python companion.py login
+   ```
+
+   It asks for your Viwoods email and password (the password isn't shown, isn't written to any file, and the command never prints your token), then stores a session token in `~/.viwoods/config.json`. If sign-in fails (the sign-in check Viwoods uses can change), use a token from the browser instead: `python companion.py login --token`, then paste the value of `localStorage.getItem('token')` from the browser console on `cloud.viwoods.com` (or the `Access-Token` header of any request in the Network tab).
+
+   Then, in the dashboard's Settings tab, set the **Obsidian Vault Path**: the full path of your vault folder, e.g. `/home/you/Obsidian` or `C:/Users/You/Obsidian`. Sync won't run until this points at a real folder. (The Settings tab can also take a token or a login, if you'd rather do it all there.)
 
 5. **Check the connection:**
 
@@ -228,6 +234,14 @@ The dashboard can read your vault and holds your token, so it's local only:
   when they come from another website's page.
 
 Use `--port` to change the port and `--no-browser` to skip opening a browser.
+
+### Sign In
+```bash
+python companion.py login              # email + password
+python companion.py login --email you@example.com
+python companion.py login --token      # paste a token copied from the browser
+```
+Stores the token InkBridge uses to talk to Viwoods. Run it again whenever the token expires (a sync will tell you). The password is only typed at the hidden prompt, never taken as an argument (it would end up in your shell history) and never saved. Under Docker: `docker compose exec -it viwoods python companion.py login`.
 
 ### Check Status & Device Connection
 ```bash

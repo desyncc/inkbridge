@@ -13,9 +13,9 @@ CONFIG_PATH = data_path("config.json")
 REQUEST_SIGNING_SALT = "O9EfpIx4g9o8TKuCv2n5msBHucSrAf"
 
 NO_TOKEN_MESSAGE = (
-    "No Viwoods token configured. Paste your Access-Token from cloud.viwoods.com "
-    "into the Settings tab of the web dashboard, or add it to "
-    f"{CONFIG_PATH} as \"token\"."
+    "No Viwoods token configured. Run `python companion.py login`, or paste your "
+    "Access-Token from cloud.viwoods.com into the Settings tab of the web dashboard, "
+    f"or add it to {CONFIG_PATH} as \"token\"."
 )
 
 

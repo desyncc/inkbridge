@@ -16,6 +16,7 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from viwoods import health
 from viwoods.config import NO_TOKEN_MESSAGE, ConfigError, load_config, save_config
 from viwoods.client import AuthError, ViwoodsClient
 from viwoods.ocr import OCREngine
@@ -49,6 +50,9 @@ def cmd_status():
         print(f"LM Studio Model:     {cfg.lmstudio_model}")
     elif cfg.ocr_engine == "gemini":
         print(f"Gemini Model:        {cfg.gemini_model}")
+    print("-" * 55)
+    print(f"Last sync:           {health.describe_health(health.load_health())}")
+    print(f"Alerts:              {'on (notify_url set)' if cfg.notify_url else 'off (set notify_url to be told when a sync needs you)'}")
     print("-" * 55)
 
     if not cfg.token:
@@ -164,6 +168,9 @@ def cmd_sync(force=False, engine=None, dry_run=False, confirm_deletions=False):
 
     result = eng.sync_all(force=force, progress_cb=on_progress, dry_run=dry_run,
                           confirm_deletions=confirm_deletions)
+    if not dry_run:
+        # Recorded for `status`; no alert, since you are watching this run.
+        health.report_success(cfg, result, alert=False)
     print("\n" + "=" * 45)
     if dry_run:
         planned = result.get("planned", [])
@@ -282,6 +289,56 @@ def cmd_serve(port=8765, host="127.0.0.1", open_browser=True):
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 
+# After a rejected sign-in, look again this soon: the user may have run `login` meanwhile.
+AUTH_RETRY_MINUTES = 30
+
+
+def _daemon_cycle(engine, interval, failures, max_backoff_minutes=240):
+    """
+    One scheduled sync. Returns (minutes to wait, consecutive failures so far).
+    """
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Running scheduled sync...")
+    try:
+        # The daemon runs for weeks: pick up a token saved since it started (by
+        # `login`, or by a renewal in another process) and the alert address.
+        fresh = load_config()
+        engine.config.token = fresh.token
+        engine.config.notify_url = fresh.notify_url
+        try:
+            engine.client.refresh_if_expiring()
+        except Exception:
+            pass
+        result = engine.sync_all(force=False, progress_cb=lambda msg, pct: print(f"  {msg}"))
+        health.report_success(engine.config, result)
+        return interval, 0
+    except Exception as e:
+        # A dropped connection or an expired token must not kill the loop; back
+        # off so a persistent outage isn't hammered.
+        failures += 1
+        wait_minutes = min(interval * (2 ** (failures - 1)), max_backoff_minutes)
+        if isinstance(e, AuthError):
+            wait_minutes = min(wait_minutes, AUTH_RETRY_MINUTES)
+        print(f"[ERROR] Sync failed ({failures} in a row): {e}")
+        traceback.print_exc()
+        health.report_failure(engine.config, e)
+        return wait_minutes, failures
+
+
+def cmd_test_notify():
+    """Sends a test message to notify_url, so you know alerts will reach you."""
+    cfg = load_config()
+    if not cfg.notify_url:
+        print("[ERROR] notify_url is not set. Put an ntfy topic URL (https://ntfy.sh/your-secret-topic) "
+              "or a Discord/Slack webhook URL in the Settings tab or in config.json.", file=sys.stderr)
+        sys.exit(1)
+    if health.send_notification(cfg.notify_url, "InkBridge: test",
+                                "If you can read this, InkBridge alerts reach you.", good=True):
+        print("Sent. Check your phone or channel.")
+    else:
+        print("[ERROR] The test message was not delivered; see the line above.", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_daemon(interval=30, max_backoff_minutes=240):
     cfg = load_config()
     engine = SyncEngine(cfg)
@@ -293,19 +350,8 @@ def cmd_daemon(interval=30, max_backoff_minutes=240):
 
     try:
         while True:
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Running scheduled sync...")
-            try:
-                engine.sync_all(force=False, progress_cb=lambda msg, pct: print(f"  {msg}"))
-                consecutive_failures = 0
-                wait_minutes = interval
-            except Exception as e:
-                # A dropped connection or an expired token must not kill the
-                # loop; back off so a persistent outage isn't hammered.
-                consecutive_failures += 1
-                wait_minutes = min(interval * (2 ** (consecutive_failures - 1)), max_backoff_minutes)
-                print(f"[ERROR] Sync failed ({consecutive_failures} in a row): {e}")
-                traceback.print_exc()
-
+            wait_minutes, consecutive_failures = _daemon_cycle(
+                engine, interval, consecutive_failures, max_backoff_minutes)
             print(f"Sleeping for {wait_minutes} minutes...\n")
             time.sleep(wait_minutes * 60)
     except KeyboardInterrupt:
@@ -403,6 +449,9 @@ def main():
     p_login.add_argument("--token", dest="use_token", action="store_true",
                          help="Paste a token copied from the browser instead of signing in with a password")
 
+    # test-notify
+    subparsers.add_parser("test-notify", help="Send a test alert to notify_url")
+
     # status
     subparsers.add_parser("status", help="Print current status and connection info")
 
@@ -436,6 +485,8 @@ def _dispatch(args):
         cmd_set_engine(args.engine, model=getattr(args, "model", None), url=getattr(args, "url", None), think=getattr(args, "think", None))
     elif args.command == "login":
         cmd_login(email=args.email, use_token=args.use_token)
+    elif args.command == "test-notify":
+        cmd_test_notify()
     elif args.command == "status":
         cmd_status()
     elif args.command == "daemon":

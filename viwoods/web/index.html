@@ -365,6 +365,12 @@
             <small class="form-hint">Your <code>Access-Token</code> from cloud.viwoods.com.</small>
           </div>
 
+          <div class="form-group">
+            <label for="cfgNotifyUrl">Alert address <small class="form-hint">(optional)</small></label>
+            <input type="password" id="cfgNotifyUrl" class="input-text" placeholder="https://ntfy.sh/your-secret-topic" autocomplete="off">
+            <small class="form-hint">Where an unattended sync tells you it needs you: an expired sign-in, a missing vault, repeated failures, or deletions waiting for approval. An <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a> topic URL or a Discord / Slack webhook. Treat it like a password. Test it with <code>python companion.py test-notify</code>.</small>
+          </div>
+
           <button id="btnSaveConfig" class="btn btn-primary">Save Settings</button>
           <span id="lblConfigSaved" class="text-success hidden">✓ Settings saved</span>
         </div>

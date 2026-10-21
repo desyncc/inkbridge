@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .client import AuthError, ViwoodsClient
+from . import health
 from .config import Config, ConfigError, load_config, save_config
 from .ocr import OCREngine
 from .sync import LOCAL_CACHE_DIR, SyncEngine, _page_sort_key
@@ -139,7 +140,7 @@ def _auto_sync_loop() -> None:
         elif time.monotonic() >= next_run:
             if _claim_sync_slot("Automatic sync starting..."):
                 print(f"[auto-sync] Running scheduled sync (every {interval} min)")
-                run_sync_task("all", force=False)
+                run_sync_task("all", force=False, unattended=True)
                 auto_sync_state["last_run"] = datetime.now().isoformat(timespec="seconds")
             else:
                 print("[auto-sync] Skipped: a sync is already running")
@@ -186,6 +187,7 @@ class ConfigUpdateRequest(BaseModel):
     daily_app_days_back: Optional[int] = None
     remove_deleted_notebooks: Optional[bool] = None
     max_deletions_per_sync: Optional[int] = None
+    notify_url: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
@@ -249,7 +251,8 @@ def get_status():
         "last_sync": engine.state.get("last_full_sync"),
         "error": error,
         "auth_error": auth_error,
-        "has_token": bool(cfg.token)
+        "has_token": bool(cfg.token),
+        "health": health.load_health()
     }
 
 
@@ -458,16 +461,24 @@ def _claim_sync_slot(message: str = "Initializing sync...") -> bool:
 
 
 def run_sync_task(scope: str, force: bool, resource_id: str = "", app_type: int = 1,
-                  confirm_deletions: bool = False) -> None:
-    """Runs a sync and publishes its progress. The slot must already be claimed."""
-    engine = get_engine()
-    engine.ocr.hold_for_gpu = True      # gpu_busy_limit: a sync waits for a quiet GPU
+                  confirm_deletions: bool = False, unattended: bool = False) -> None:
+    """
+    Runs a sync and publishes its progress. The slot must already be claimed.
+    An `unattended` run (the scheduler's) sends an alert when it needs the user.
+    """
+    engine = None
 
     def on_progress(msg: str, pct: float):
         sync_status["message"] = msg
         sync_status["progress"] = pct
 
     try:
+        engine = get_engine()
+        engine.ocr.hold_for_gpu = True      # gpu_busy_limit: a sync waits for a quiet GPU
+        try:
+            engine.client.refresh_if_expiring()
+        except Exception:
+            pass
         if scope == "journals":
             count = engine.sync_recent_journals(force=force, progress_cb=on_progress)
             result = {"scope": "journals", "synced": count}
@@ -492,9 +503,15 @@ def run_sync_task(scope: str, force: bool, resource_id: str = "", app_type: int 
         sync_status["last_result"] = result
         sync_status["message"] = "Completed"
         sync_status["progress"] = 1.0
+        if scope in ("all", "paper") and not resource_id:
+            health.report_success(engine.config, result, alert=unattended)
     except Exception as e:
         sync_status["error"] = str(e)
         sync_status["message"] = f"Failed: {e}"
+        try:
+            health.report_failure(engine.config if engine else load_config(), e, alert=unattended)
+        except Exception:
+            pass
     finally:
         sync_status["is_running"] = False
 
@@ -531,7 +548,7 @@ def update_config(req: ConfigUpdateRequest):
     return {"code": 200, "message": "Configuration saved.", "config": get_config()["config"]}
 
 
-SECRET_FIELDS = ("token", "gemini_api_key")
+SECRET_FIELDS = ("token", "gemini_api_key", "notify_url")
 
 
 def _mask_secret(value: Optional[str]) -> str:
@@ -552,6 +569,8 @@ def get_config():
         data[f"has_{field}"] = bool((data.get(field) or "").strip())
         data[f"{field}_masked"] = _mask_secret(data.get(field))
         data.pop(field, None)
+    # The secret part of an alert URL is its path (the topic), so show only the host.
+    data["notify_url_masked"] = urlsplit(cfg.notify_url or "").hostname or ""
 
     return {"code": 200, "config": data}
 

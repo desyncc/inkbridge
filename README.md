@@ -174,6 +174,7 @@ default:
   "download_recordings": true,
   "remove_deleted_notebooks": true,
   "max_deletions_per_sync": 10,
+  "notify_url": "",
   "max_pages_per_notebook": 50,
   "daily_app_days_back": 30
 }
@@ -209,6 +210,7 @@ default:
 | `download_recordings` | Save meeting audio into the attachments folder and link it. |
 | `remove_deleted_notebooks` | Keep the vault a true mirror: a full sync deletes the note, page images, recordings and daily-note copies of any notebook (or folder) you deleted on the tablet, and removes folders that end up empty. Moves and renames are always followed, whatever this is set to. Set `false` to keep deleted notebooks in the vault. Preview with `sync --dry-run`. |
 | `max_deletions_per_sync` | Safety limit for the above. A sync that would delete more than this many notebooks, or more than half of a library of three or more, deletes **nothing**, says so loudly, and waits: run `companion.py sync --confirm-deletions` (or press OK in the dashboard's prompt) to go ahead. It catches a wrong account or a bad response from the cloud. `0` turns the check off. |
+| `notify_url` | Where an unattended sync (the daemon, or the dashboard's auto-sync) sends an alert when it needs you. An [ntfy](https://ntfy.sh) topic URL or a Discord / Slack webhook; empty means no alerts. It's a secret, so keep the topic name unguessable. See [Alerts](#-alerts). |
 | `max_pages_per_notebook` | Cap on pages per notebook (large imported PDF planners). `0` means no cap; when pages are dropped the mirrored note says so. |
 | `daily_app_days_back` | How many days back `companion.py daily` (and the `daily` step of a full sync) pulls from the Viwoods Daily app. |
 
@@ -241,7 +243,7 @@ python companion.py login              # email + password
 python companion.py login --email you@example.com
 python companion.py login --token      # paste a token copied from the browser
 ```
-Stores the token InkBridge uses to talk to Viwoods. Run it again whenever the token expires (a sync will tell you). The password is only typed at the hidden prompt, never taken as an argument (it would end up in your shell history) and never saved. Under Docker: `docker compose exec -it viwoods python companion.py login`.
+Stores the token InkBridge uses to talk to Viwoods. InkBridge renews it by itself: when Viwoods rejects it, and ahead of time when it's within a month of expiring. If a renewal ever fails, run `login` again (you'll be [alerted](#-alerts) if you've set `notify_url`). The password is only typed at the hidden prompt, never taken as an argument (it would end up in your shell history) and never saved. Under Docker: `docker compose exec -it viwoods python companion.py login`.
 
 ### Check Status & Device Connection
 ```bash
@@ -320,6 +322,33 @@ Checks for new or modified notebooks every 30 minutes. A failed sync is logged a
 To keep it running without a terminal, install it as a systemd user service with
 [`contrib/inkbridge.service`](contrib/inkbridge.service) (the commands are in its header). With
 `gpu_busy_limit` set, a sync waits while a game has the GPU.
+
+---
+
+## 🔔 Alerts
+
+A daemon nobody is watching can stop syncing for weeks without you noticing. Set `notify_url` and InkBridge tells you instead:
+
+```json
+"notify_url": "https://ntfy.sh/pick-a-long-unguessable-topic-name"
+```
+
+Install the [ntfy](https://ntfy.sh) app, subscribe to the same topic, then check it reaches you:
+
+```bash
+python companion.py test-notify
+```
+
+A Discord or Slack webhook URL works too. You get **one** message when something needs you, and one when it's fixed:
+
+| When | Message |
+| --- | --- |
+| Your Viwoods sign-in was rejected and couldn't be renewed | Run `python companion.py login` |
+| The vault folder is missing | The path it looked for |
+| Syncs keep failing (twice in a row) | The error |
+| Deletions were held back by `max_deletions_per_sync` | Run `sync --confirm-deletions` if they're real |
+
+Alerts say what is wrong and never name your notebooks or pages. They are only sent by unattended syncs (`daemon`, or `serve` with `auto_sync_interval`); a sync you run yourself reports to your terminal. `python companion.py status` always shows how the last sync went. After an expired sign-in the daemon checks again every 30 minutes, so running `login` is picked up without restarting it.
 
 ---
 

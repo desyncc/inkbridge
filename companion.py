@@ -4,6 +4,7 @@ Sync your notebooks and daily handwriting from cloud.viwoods.com to Obsidian.
 """
 
 import argparse
+import getpass
 import socket
 import sys
 import threading
@@ -16,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from viwoods.config import NO_TOKEN_MESSAGE, ConfigError, load_config, save_config
-from viwoods.client import ViwoodsClient
+from viwoods.client import AuthError, ViwoodsClient
 from viwoods.ocr import OCREngine
 from viwoods.vault import ObsidianVault, VaultNotFoundError
 from viwoods.sync import SyncEngine
@@ -69,6 +70,55 @@ def cmd_status():
     except Exception as e:
         print(f"Viwoods Cloud:       ERROR ({e})")
     print("=" * 55)
+
+
+def cmd_login(email: str = None, use_token: bool = False):
+    """
+    Stores a Viwoods session token. By default signs in with an email and
+    password; with `use_token`, takes a token pasted from the browser instead.
+    The password is read without echo, never passed as an argument (it would
+    land in shell history) and never saved; the token is never printed.
+    """
+    cfg = load_config()
+    client = ViwoodsClient(cfg)
+
+    if use_token:
+        token = getpass.getpass("Paste your Viwoods token (input is hidden): ").strip()
+        if not token:
+            _login_failed("No token entered.")
+        cfg.token = token
+        try:
+            devices = client.get_devices()   # fails with AuthError if the token is no good
+        except Exception as e:
+            _login_failed(f"That token was not accepted: {e}")
+    else:
+        email = (email or input("Viwoods email: ")).strip()
+        password = getpass.getpass("Viwoods password (input is hidden): ")
+        if not email or not password:
+            _login_failed("An email and a password are both needed.")
+        try:
+            client.login(email, password)
+        except Exception as e:
+            _login_failed(f"Sign-in failed: {e}")
+        try:
+            devices = client.get_devices()
+        except Exception:
+            devices = None   # signed in, but couldn't list devices; the token is still good
+
+    save_config(cfg)
+    if devices:
+        d = devices[0]
+        print(f"Signed in. Connected to {d.get('modelName')} (SN: {d.get('machineNumber')}).")
+    elif devices is None:
+        print("Signed in. (Could not list your tablets just now; run `companion.py status` to check.)")
+    else:
+        print("Signed in, but no tablet is registered to this account yet.")
+    print("Your token is saved. Next: set your vault path, then `python companion.py sync --dry-run`.")
+
+
+def _login_failed(message: str):
+    print(f"[ERROR] {message}", file=sys.stderr)
+    sys.exit(1)
 
 
 def cmd_set_engine(engine: str, model: str = None, url: str = None, think: bool = None):
@@ -347,6 +397,12 @@ def main():
     think_group.add_argument("--think", dest="think", action="store_true", default=None, help="Enable Ollama model thinking (ollama engine only)")
     think_group.add_argument("--no-think", dest="think", action="store_false", help="Disable Ollama model thinking")
 
+    # login
+    p_login = subparsers.add_parser("login", help="Sign in to Viwoods and store your session token")
+    p_login.add_argument("--email", help="Your Viwoods account email (asked for if omitted)")
+    p_login.add_argument("--token", dest="use_token", action="store_true",
+                         help="Paste a token copied from the browser instead of signing in with a password")
+
     # status
     subparsers.add_parser("status", help="Print current status and connection info")
 
@@ -378,6 +434,8 @@ def _dispatch(args):
         cmd_daily(days=args.days, force=args.force, engine=getattr(args, "engine", None))
     elif args.command == "set-engine":
         cmd_set_engine(args.engine, model=getattr(args, "model", None), url=getattr(args, "url", None), think=getattr(args, "think", None))
+    elif args.command == "login":
+        cmd_login(email=args.email, use_token=args.use_token)
     elif args.command == "status":
         cmd_status()
     elif args.command == "daemon":

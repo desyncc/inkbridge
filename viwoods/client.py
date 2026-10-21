@@ -11,7 +11,7 @@ import httpx
 
 from .config import Config, NO_TOKEN_MESSAGE
 
-TOKEN_EXPIRED_MESSAGE = "Viwoods token expired, paste a new one in Settings."
+TOKEN_EXPIRED_MESSAGE = "Viwoods token expired. Run `python companion.py login` or paste a new one in Settings."
 
 # Viwoods API result codes that mean "log in again".
 AUTH_ERROR_CODES = {"401", "403", "1001", "4001", "10001"}

@@ -6,6 +6,8 @@ All notable changes to InkBridge are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-21
+
 ### Added
 
 - **Deletes, moves and renames follow the tablet.** A full sync keeps the vault a 1:1 mirror: a
@@ -81,4 +83,5 @@ InkBridge was developed in the open from 2026-09-05 without tagged releases. By 
 
 The full history is in the [commit log](https://github.com/desyncc/inkbridge/commits/main).
 
-[Unreleased]: https://github.com/desyncc/inkbridge/commits/main
+[Unreleased]: https://github.com/desyncc/inkbridge/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/desyncc/inkbridge/releases/tag/v1.1.0

@@ -68,7 +68,7 @@ And the dashboard puts the ink beside the extracted text, so you can check a tra
 
 A first run, start to finish.
 
-> **Quickest install:** with [pipx](https://pipx.pypa.io), `pipx install git+https://github.com/desyncc/inkbridge.git` gives you an `inkbridge` command that works from any folder. Everywhere below, read `python companion.py <command>` as `inkbridge <command>`, and skip step 1. Update later with `pipx upgrade inkbridge`.
+> **Quickest install:** with [pipx](https://pipx.pypa.io), `pipx install git+https://github.com/desyncc/inkbridge.git` gives you an `inkbridge` command that works from any folder. Everywhere below, read `python companion.py <command>` as `inkbridge <command>`, and skip step 1. Update later with `pipx upgrade inkbridge`, or pin a release with `pipx install git+https://github.com/desyncc/inkbridge.git@v1.1.0`.
 
 Otherwise, after `cd inkbridge` in step 1, every command runs from that folder.
 

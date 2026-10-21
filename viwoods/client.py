@@ -68,7 +68,7 @@ def decode_gzip_b64(b64_str: str) -> Any:
         compressed = base64.b64decode(b64_str)
         decompressed = gzip.decompress(compressed)
         return json.loads(decompressed.decode("utf-8"))
-    except Exception as e:
+    except Exception:
         # If not gzip, maybe plain json or string
         try:
             return json.loads(b64_str)

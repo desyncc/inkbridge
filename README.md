@@ -1,6 +1,8 @@
 # 🌲 InkBridge for Obsidian
 
 [![Tests](https://github.com/desyncc/inkbridge/actions/workflows/tests.yml/badge.svg)](https://github.com/desyncc/inkbridge/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 
 > **Unofficial fan project.** Not made by, affiliated with, or endorsed by Viwoods. If Viwoods themselves ever wants this taken down, just say so and it will be, no argument.
 
@@ -476,6 +478,28 @@ Attachment names are `<title>_<uuid8>_p<n>.png`; the title is truncated first so
 
 ---
 
+## 🔒 Privacy & Limits
+
+**What leaves your machine.** InkBridge sends no analytics or telemetry. It talks to exactly these places, and nothing else:
+
+| Where | Why |
+| --- | --- |
+| Viwoods Cloud (`api.viwoods.com`, and the image links it gives you) | Listing and downloading your notebooks. This is the same service your tablet syncs with. |
+| Your OCR engine | **Ollama and LM Studio** run on your machine (or the one you point `ollama_url` / `lmstudio_url` at), so your pages stay local. **Gemini** sends each page image to Google. **Windows OCR** is entirely offline. |
+| Your `notify_url`, if you set one | Alerts. They name causes and counts, never notebooks or page text. |
+
+**What's stored.** Your token and keys live in `~/.viwoods/config.json`, in plain text, readable only by your user. Your password is never stored. See [SECURITY.md](SECURITY.md) for the details, including the dashboard (local only, no login).
+
+**Limits worth knowing.**
+
+- **It's unofficial.** InkBridge uses Viwoods' undocumented cloud API, so an update on their side can break it without warning. `doctor` tells you what's wrong, and an issue is welcome.
+- **Sync is one way, tablet to vault.** Notes under `99 - Viwoods/` are regenerated whenever their notebook changes, so don't write in them; keep your own notes outside that folder. The only thing InkBridge adds to your own notes is the block between its markers in a daily note.
+- **The vault follows the tablet, including deletions.** Delete a notebook on the tablet and its note goes too (with a safety limit, `max_deletions_per_sync`, against mass deletion). Set `remove_deleted_notebooks` to `false` if you'd rather keep them.
+- **Handwriting accuracy depends on the model.** Check transcripts of anything important.
+- **One Viwoods account per install.** Large imported PDFs are capped by `max_pages_per_notebook`.
+
+---
+
 ## 🛠️ Architecture & Under the Hood
 
 - **Viwoods API**: Implements the proprietary MD5 request signing protocol (`uri` parameter + alphabetical key sorting + secret salt + MD5 hex) with `Machine-Model: web` authentication. Values are serialized as JSON so booleans and nested objects sign the way the server reads them. Folder listings are paginated until exhausted.
@@ -488,16 +512,16 @@ Attachment names are `<title>_<uuid8>_p<n>.png`; the title is truncated first so
 ## 🧪 Tests
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 python -m pytest
 ```
 
-The suite covers the daily-journal marker injection (including legacy
-migration, multiple notebooks per date and CRLF files), finding and creating
-daily notes from Obsidian's settings, journal dates, retrying failed pages,
-config loading, OCR failure handling, attachment naming, note lookup, the
-markdown-to-HTML conversion, request signing and folder pagination. It runs against a temporary `VIWOODS_DATA_DIR`, so it never
-touches your real config, state or cache.
+The suite runs against a temporary `VIWOODS_DATA_DIR` and a fake Viwoods API, so it never touches your real config, vault or account. It covers the sync engine (deletes, moves, renames and the deletion safety limit), daily-note injection, token renewal, alerts, `doctor`, the OCR engines and their failure handling, request signing and paging, and file permissions. A test also checks that the README documents every setting and command.
 
-GitHub Actions runs the suite on every pull request and every push to `main`,
-on Linux (Python 3.10 and 3.14) and Windows.
+GitHub Actions runs it on every pull request and every push to `main`, on Linux (Python 3.10 and 3.14) and Windows, along with `ruff` and a check that the package installs into a clean environment.
+
+---
+
+## 🤝 Contributing
+
+Bug reports, fixes and ideas are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); for a bug, paste the output of `doctor`. Notable changes are listed in [CHANGELOG.md](CHANGELOG.md), security issues go through [SECURITY.md](SECURITY.md), and the project is under the [MIT license](LICENSE).

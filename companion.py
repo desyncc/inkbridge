@@ -39,7 +39,6 @@ try:
     from viwoods import doctor, health
     from viwoods.config import NO_TOKEN_MESSAGE, ConfigError, load_config, save_config
     from viwoods.client import AuthError, ViwoodsClient
-    from viwoods.ocr import OCREngine
     from viwoods.paths import command
     from viwoods.vault import ObsidianVault, VaultNotFoundError
     from viwoods.sync import SyncEngine
@@ -246,7 +245,7 @@ def cmd_journals(days=14, force=False, engine=None):
     if engine:
         cfg.ocr_engine = engine
     eng = SyncEngine(cfg)
-    print(f"\n[InkBridge] Syncing Daily Journals...")
+    print("\n[InkBridge] Syncing Daily Journals...")
     print(f"Using OCR engine: {cfg.ocr_engine}")
 
     def on_progress(msg, pct):
@@ -264,7 +263,7 @@ def cmd_daily(days=None, force=False, engine=None):
     if engine:
         cfg.ocr_engine = engine
     eng = SyncEngine(cfg)
-    print(f"\n[InkBridge] Syncing Viwoods Daily app entries...")
+    print("\n[InkBridge] Syncing Viwoods Daily app entries...")
     print(f"Using OCR engine: {cfg.ocr_engine}")
 
     def on_progress(msg, pct):
@@ -295,10 +294,10 @@ def cmd_serve(port=8765, host="127.0.0.1", open_browser=True):
     from viwoods.server import app
 
     url = f"http://{host}:{port}"
-    print(f"\n=======================================================")
-    print(f"  InkBridge Web Dashboard running at:")
+    print("\n=======================================================")
+    print("  InkBridge Web Dashboard running at:")
     print(f"  -> {url}")
-    print(f"=======================================================\n")
+    print("=======================================================\n")
 
     if open_browser:
         # Opening before uvicorn is listening lands on a connection error.
